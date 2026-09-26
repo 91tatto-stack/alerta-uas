@@ -68,11 +68,14 @@ function mostrarAlarma(a) {
   $('#aCerrar').classList.toggle('oculto', puedeConfirmar);
   $('#aOk').classList.toggle('oculto', puedeConfirmar);
   $('#aOk').textContent = token ? '' : 'Inscríbase para poder confirmar su estado al C2.';
-  Sirena.iniciar(a.nivel);
+  const suena = Sirena.iniciar(a.nivel);
+  // Si el navegador bloqueó el sonido (típico en iPhone al abrir desde la notificación), pedir un toque
+  $('#aSonido').classList.toggle('oculto', suena || a.nivel === 'DESPEJADO');
+  setTimeout(revisarSonido, 400);
   if (navigator.vibrate) navigator.vibrate(a.nivel === 'ATAQUE' ? [600, 200, 600, 200, 600, 200, 600] : [400, 300, 400]);
 }
 document.querySelectorAll('#aBotones button').forEach(b => b.onclick = async () => {
-  Sirena.detener();
+  Sirena.detener(); $('#aSonido').classList.add('oculto');
   const r = await fetch(`/api/alertas/${alertaEnPantalla.id}/confirmar`, {
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
     body: JSON.stringify({ estado: b.dataset.e })
@@ -81,6 +84,7 @@ document.querySelectorAll('#aBotones button').forEach(b => b.onclick = async () 
   $('#aOk').classList.remove('oculto');
   if (r.ok) { $('#aBotones').classList.add('oculto'); $('#aCerrar').classList.remove('oculto'); }
 });
+$('#aSonido').onclick = () => { Sirena.desbloquear(); setTimeout(() => { if (alertaEnPantalla) Sirena.iniciar(alertaEnPantalla.nivel); $('#aSonido').classList.toggle('oculto', Sirena.activa()); }, 150); };
 $('#aCerrar').onclick = () => { Sirena.detener(); $('#alarma').classList.add('oculto'); };
 
 // ---------- Activar avisos: sonido + notificaciones push ----------
@@ -126,4 +130,14 @@ $('#btnRegistro').onclick = async () => {
 };
 pintarPerfil();
 
+function revisarSonido() {
+  const abierta = !$('#alarma').classList.contains('oculto') && alertaEnPantalla && alertaEnPantalla.nivel !== 'DESPEJADO' && !$('#aBotones').classList.contains('oculto');
+  $('#aSonido').classList.toggle('oculto', !abierta || Sirena.activa());
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState !== 'visible') return;
+  cargar();
+  if (alertaEnPantalla && !$('#alarma').classList.contains('oculto') && !$('#aBotones').classList.contains('oculto')) Sirena.iniciar(alertaEnPantalla.nivel);
+  setTimeout(revisarSonido, 400);
+});
 if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');

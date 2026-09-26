@@ -55,10 +55,23 @@ function dibujarZona(mapa, a, capa) {
 
 // ---- Sirena generada con Web Audio (no requiere archivos de sonido) ----
 const Sirena = {
-  ctx: null, osc: null, gain: null, timer: null,
-  desbloquear() { if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)(); if (this.ctx.state === 'suspended') this.ctx.resume(); },
+  ctx: null, osc: null, gain: null, timer: null, nivel: null,
+  desbloquear() {
+    // iPhone (Safari 16.4+): "playback" hace que suene aunque el interruptor de silencio esté activado (app abierta)
+    try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
+    try {
+      if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
+      if (this.ctx.state !== 'running') this.ctx.resume();
+      // iOS: reproducir un sonido vacío dentro del toque "desbloquea" el audio
+      const b = this.ctx.createBuffer(1, 1, 22050), src = this.ctx.createBufferSource();
+      src.buffer = b; src.connect(this.ctx.destination); src.start(0);
+    } catch {}
+  },
+  activa() { return !!(this.ctx && this.ctx.state === 'running'); },
   iniciar(nivel) {
-    this.detener(); if (!this.ctx) return;
+    this.detener(); this.nivel = nivel;
+    if (!this.ctx) return false;
+    if (this.ctx.state !== 'running') this.ctx.resume();
     this.osc = this.ctx.createOscillator(); this.gain = this.ctx.createGain();
     this.osc.type = 'sawtooth'; this.gain.gain.value = .35;
     this.osc.connect(this.gain).connect(this.ctx.destination); this.osc.start();
@@ -67,6 +80,11 @@ const Sirena = {
       this.osc.frequency.linearRampToValueAtTime(alto ? 600 : 1300, t + (lento ? 1.2 : .45)); alto = !alto; };
     paso(); this.timer = setInterval(paso, lento ? 1200 : 450);
     if (nivel === 'DESPEJADO') setTimeout(() => this.detener(), 2500);
+    return this.activa();
   },
   detener() { clearInterval(this.timer); try { this.osc && this.osc.stop(); } catch {} this.osc = null; }
 };
+// Al volver a la app (iOS suspende el audio en segundo plano) se reactiva el contexto
+document.addEventListener('visibilitychange', () => {
+  if (document.visibilityState === 'visible' && Sirena.ctx && Sirena.ctx.state !== 'running') Sirena.ctx.resume();
+});
