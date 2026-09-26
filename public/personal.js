@@ -1,0 +1,129 @@
+// ===== Vista del personal =====
+const $ = s => document.querySelector(s);
+let token = localStorage.getItem('tokenPersonal');
+let perfil = JSON.parse(localStorage.getItem('perfilPersonal') || 'null');
+const vistas = new Set(JSON.parse(localStorage.getItem('alertasVistas') || '[]'));
+let alertaEnPantalla = null;
+
+const mapa = crearMapa('mapa');
+const capa = L.layerGroup().addTo(mapa);
+
+// ---------- Cargar y pintar alertas ----------
+let datos = { activas: [], historial: [] };
+async function cargar() {
+  const r = await fetch('/api/alertas'); datos = await r.json(); pintar();
+  // Si se abre la app desde la notificación, mostrar la alerta activa no vista
+  const pendiente = datos.activas.find(a => !vistas.has(a.id));
+  if (pendiente) mostrarAlarma(pendiente);
+}
+function pintar() {
+  capa.clearLayers();
+  const todas = [...datos.activas, ...datos.historial.slice(0, 10)];
+  todas.forEach(a => dibujarZona(mapa, a, capa));
+  const top = datos.activas.find(a => a.nivel === 'ATAQUE') || datos.activas[0];
+  const est = $('#estado'); est.className = 'estado ' + (top ? top.nivel : '');
+  $('#estadoIcono').innerHTML = top
+    ? '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>'
+    : '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3z"/><path d="m9 12 2 2 4-4"/>';
+  if (top) {
+    $('#estadoTit').textContent = top.titulo;
+    $('#estadoTxt').textContent = top.instruccion + ' · Zona: ' + top.zona.nombre;
+    mapa.flyTo([top.zona.lat, top.zona.lng], 13);
+  } else {
+    $('#estadoTit').textContent = 'Sin amenazas activas';
+    $('#estadoTxt').textContent = 'Mantén los avisos activados para enterarte al instante.';
+  }
+  const lista = [...datos.activas, ...datos.historial];
+  $('#historial').innerHTML = lista.length ? lista.map(a => `
+    <div class="item"><div class="meta mono"><span class="punto ${a.estado}"></span>${ESTADO_TXT[a.estado]} · ${fechaCorta(a.creada)}</div>
+    <b>${esc(a.titulo)}</b><div class="vacio">${esc(a.zona.nombre)}</div></div>`).join('')
+    : '<div class="vacio">Sin alertas registradas.</div>';
+}
+
+// ---------- Tiempo real ----------
+const socket = io();
+socket.on('connect', () => { $('#conexion').textContent = 'EN VIVO'; $('#vivo').classList.remove('off'); cargar(); });
+socket.on('disconnect', () => { $('#conexion').textContent = 'SIN CONEXIÓN'; $('#vivo').classList.add('off'); });
+socket.on('alerta:nueva', a => { datos.activas.unshift(a); pintar(); mostrarAlarma(a); });
+socket.on('alerta:actualizada', a => {
+  datos.activas = datos.activas.filter(x => x.id !== a.id);
+  datos.historial = [a, ...datos.historial.filter(x => x.id !== a.id)]; pintar();
+  if (alertaEnPantalla && alertaEnPantalla.id === a.id) {
+    Sirena.detener(); $('#aOk').textContent = a.estado === 'FALSA_ALARMA' ? 'EL C2 CANCELÓ ESTA ALERTA (FALSA ALARMA)' : 'ALERTA FINALIZADA';
+    $('#aOk').classList.remove('oculto'); $('#aBotones').classList.add('oculto'); $('#aCerrar').classList.remove('oculto');
+  }
+});
+
+// ---------- Pantalla de alarma ----------
+function mostrarAlarma(a) {
+  alertaEnPantalla = a; vistas.add(a.id); localStorage.setItem('alertasVistas', JSON.stringify([...vistas].slice(-100)));
+  const el = $('#alarma'); el.className = `alarma ${a.nivel} ${a.modo}`;
+  $('#aEtiq').textContent = (a.modo === 'SIMULACRO' ? '⚠ SIMULACRO · ' : '') + 'ALERTA UAS · ' + fechaCorta(a.creada);
+  $('#aTit').textContent = a.titulo.replace('SIMULACRO · ', '');
+  $('#aInstr').textContent = a.instruccion;
+  $('#aMsg').textContent = a.mensaje || '';
+  $('#aZona').textContent = 'ZONA: ' + a.zona.nombre.toUpperCase();
+  const puedeConfirmar = !!token && a.nivel !== 'DESPEJADO';
+  $('#aBotones').classList.toggle('oculto', !puedeConfirmar);
+  $('#aCerrar').classList.toggle('oculto', puedeConfirmar);
+  $('#aOk').classList.toggle('oculto', puedeConfirmar);
+  $('#aOk').textContent = token ? '' : 'Inscríbase para poder confirmar su estado al C2.';
+  Sirena.iniciar(a.nivel);
+  if (navigator.vibrate) navigator.vibrate(a.nivel === 'ATAQUE' ? [600, 200, 600, 200, 600, 200, 600] : [400, 300, 400]);
+}
+document.querySelectorAll('#aBotones button').forEach(b => b.onclick = async () => {
+  Sirena.detener();
+  const r = await fetch(`/api/alertas/${alertaEnPantalla.id}/confirmar`, {
+    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
+    body: JSON.stringify({ estado: b.dataset.e })
+  });
+  $('#aOk').textContent = r.ok ? '✓ ESTADO ENVIADO AL C2: ' + b.textContent.toUpperCase() : 'No se pudo enviar. Reintente.';
+  $('#aOk').classList.remove('oculto');
+  if (r.ok) { $('#aBotones').classList.add('oculto'); $('#aCerrar').classList.remove('oculto'); }
+});
+$('#aCerrar').onclick = () => { Sirena.detener(); $('#alarma').classList.add('oculto'); };
+
+// ---------- Activar avisos: sonido + notificaciones push ----------
+function base64ToUint8(b64) {
+  const p = '='.repeat((4 - b64.length % 4) % 4); const raw = atob((b64 + p).replace(/-/g, '+').replace(/_/g, '/'));
+  return Uint8Array.from([...raw].map(c => c.charCodeAt(0)));
+}
+async function activarPush() {
+  if (!('serviceWorker' in navigator) || !('PushManager' in window)) return 'Este navegador no admite notificaciones push. En iPhone, agregue la app a la pantalla de inicio.';
+  if (!token) return 'Sonido activado. Inscríbase abajo para recibir notificaciones con la app cerrada.';
+  const permiso = await Notification.requestPermission();
+  if (permiso !== 'granted') return 'Permiso de notificaciones denegado.';
+  const reg = await navigator.serviceWorker.ready;
+  const { key } = await (await fetch('/api/vapid')).json();
+  const sub = await reg.pushManager.getSubscription() || await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: base64ToUint8(key) });
+  const r = await fetch('/api/suscribir', { method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify({ subscription: sub }) });
+  return r.ok ? null : 'No se pudo registrar el teléfono.';
+}
+$('#btnActivar').onclick = async () => {
+  Sirena.desbloquear(); // los navegadores exigen un toque del usuario para permitir sonido
+  const err = await activarPush().catch(e => e.message);
+  $('#btnActivar').classList.add('on'); $('#txtActivar').textContent = err ? 'Sonido activo' : 'Avisos activos';
+  if (err) alert(err);
+};
+
+// ---------- Inscripción ----------
+function pintarPerfil() {
+  if (!perfil) return;
+  $('#registro').classList.add('oculto'); $('#perfil').classList.remove('oculto');
+  $('#perfil').innerHTML = `<h3>Inscrito en la red</h3><div class="vacio">${esc(perfil.nombre)} · ${esc(perfil.unidad)}</div>
+    <button class="btn" style="margin-top:12px;width:100%" id="btnSalir">Cerrar sesión en este teléfono</button>`;
+  $('#btnSalir').onclick = () => { localStorage.removeItem('tokenPersonal'); localStorage.removeItem('perfilPersonal'); location.reload(); };
+}
+$('#btnRegistro').onclick = async () => {
+  $('#rError').textContent = '';
+  const r = await fetch('/api/registro', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ nombre: $('#rNombre').value.trim(), unidad: $('#rUnidad').value.trim(), codigo: $('#rCodigo').value.trim() }) });
+  const d = await r.json();
+  if (!r.ok) return $('#rError').textContent = d.error;
+  token = d.token; perfil = d.perfil;
+  localStorage.setItem('tokenPersonal', token); localStorage.setItem('perfilPersonal', JSON.stringify(perfil));
+  pintarPerfil(); $('#btnActivar').click();
+};
+pintarPerfil();
+
+if ('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');

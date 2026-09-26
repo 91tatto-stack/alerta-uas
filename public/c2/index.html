@@ -1,0 +1,131 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="theme-color" content="#0b0d10">
+<title>C2 · Alerta UAS</title>
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/estilos.css">
+<style>
+  .wrap{max-width:1180px}
+  .grid{display:grid;grid-template-columns:1.15fr 1fr;gap:18px;align-items:start}
+  @media(max-width:900px){.grid{grid-template-columns:1fr}}
+  .modo{display:flex;border:1px solid var(--borde);border-radius:999px;overflow:hidden}
+  .modo button{flex:1;padding:12px;border:none;background:transparent;color:var(--suave);font:700 14px 'JetBrains Mono',monospace;letter-spacing:2px;cursor:pointer}
+  .modo button.sel[data-m=SIMULACRO]{background:#1d2a3a;color:var(--azul)}
+  .modo button.sel[data-m=REAL]{background:var(--rojo);color:#fff}
+  .bandera{margin-top:10px;padding:10px 14px;border-radius:12px;font:600 13px 'JetBrains Mono',monospace;letter-spacing:1px;text-align:center}
+  .bandera.SIMULACRO{background:#1d2a3a;color:var(--azul)} .bandera.REAL{background:var(--rojo-bg);color:var(--rojo);border:1px solid #5c1c1e}
+  .plantillas{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
+  .plantilla{padding:16px 10px;border-radius:14px;border:2px solid var(--borde);background:#0e1115;color:var(--texto);font:800 14px Archivo,sans-serif;cursor:pointer;text-transform:uppercase;line-height:1.2}
+  .plantilla small{display:block;font:500 11px Archivo;color:var(--suave);text-transform:none;margin-top:4px}
+  .plantilla.sel[data-n=ATAQUE]{border-color:var(--rojo);background:var(--rojo-bg)}
+  .plantilla.sel[data-n=AMENAZA]{border-color:var(--ambar);background:var(--ambar-bg)}
+  .plantilla.sel[data-n=DESPEJADO]{border-color:var(--verde);background:var(--verde-bg)}
+  .enviar{width:100%;margin-top:16px;padding:18px;border-radius:14px;border:none;font:900 17px Archivo,sans-serif;letter-spacing:.5px;cursor:pointer;text-transform:uppercase}
+  .enviar:disabled{opacity:.35;cursor:not-allowed}
+  .dos{display:grid;grid-template-columns:2fr 1fr;gap:10px}
+  .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:10px}
+  .stat{padding:10px;border-radius:12px;background:#0e1115;border:1px solid var(--borde);text-align:center}
+  .stat b{display:block;font-size:22px}.stat span{font-size:10px;color:var(--suave);letter-spacing:1px}
+  .persona{display:flex;justify-content:space-between;gap:8px;font-size:13px;padding:6px 0;border-bottom:1px solid var(--borde)}
+  .tag{font:600 11px 'JetBrains Mono',monospace;padding:2px 8px;border-radius:999px;background:#1a1f26;color:var(--suave);white-space:nowrap}
+  .tag.A_SALVO{color:var(--verde)}.tag.RECIBIDO{color:var(--azul)}.tag.NECESITO_APOYO{color:#fff;background:var(--rojo)}.tag.PENDIENTE{color:var(--ambar)}
+  .acciones{display:flex;gap:8px;margin-top:10px}.acciones .btn{min-width:0;padding:10px;font-size:13px}
+  .modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:grid;place-items:center;z-index:5000;padding:16px}
+  .modal .caja{max-width:440px;width:100%;background:var(--panel);border:1px solid var(--borde);border-radius:var(--radio);padding:24px}
+  .modal h3{margin:0 0 8px;font-size:20px}
+  .log{font:12px 'JetBrains Mono',monospace;color:var(--suave);max-height:260px;overflow:auto}
+  .log div{padding:5px 0;border-bottom:1px solid var(--borde)}
+  #mapaC2{height:360px;cursor:crosshair}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header class="cab">
+    <img class="logo" src="/logo.png" alt="Comando de Protección a la Fuerza">
+    <div><h1>Centro de Comando y Control</h1>
+      <small class="mono">COPAF · EMISIÓN DE ALERTAS UAS · <span id="conexion">CONECTANDO</span><span class="vivo off" id="vivo"></span> <span id="quien"></span></small></div>
+  </header>
+
+  <!-- Login -->
+  <section class="tarjeta" id="login" style="max-width:420px">
+    <h3>Acceso restringido</h3>
+    <label>Usuario<input id="lUsuario" autocomplete="username"></label>
+    <label>Contraseña<input id="lClave" type="password" autocomplete="current-password"></label>
+    <button class="btn primario" style="margin-top:14px;width:100%" id="btnLogin">Ingresar</button>
+    <div class="error" id="lError"></div>
+    <div class="aviso">Todo acceso y acción queda registrado en la bitácora de auditoría.</div>
+  </section>
+
+  <div class="grid oculto" id="panel">
+    <div>
+      <section class="tarjeta" style="margin-top:0">
+        <h3>1 · Modo de emisión</h3>
+        <div class="modo"><button data-m="SIMULACRO" class="sel">SIMULACRO</button><button data-m="REAL">REAL</button></div>
+        <div class="bandera SIMULACRO" id="bandera">MODO SIMULACRO · las alertas se marcan como ejercicio</div>
+      </section>
+      <section class="tarjeta">
+        <h3>2 · Zona afectada <span class="vacio" style="font-weight:400">— toque el mapa para ubicar el centro</span></h3>
+        <div class="mapa" id="mapaC2"></div>
+        <div class="dos">
+          <label>Nombre de la zona<input id="zNombre" placeholder="Ej: Sector hangares norte"></label>
+          <label>Radio (m)<input id="zRadio" type="number" value="1500" min="100" max="50000" step="100"></label>
+        </div>
+      </section>
+      <section class="tarjeta">
+        <h3>3 · Tipo de alerta</h3>
+        <div class="plantillas">
+          <button class="plantilla" data-n="ATAQUE">🔴 Ataque en curso<small>Refugio inmediato</small></button>
+          <button class="plantilla" data-n="AMENAZA">🟠 Amenaza detectada<small>Alistamiento</small></button>
+          <button class="plantilla" data-n="DESPEJADO">🟢 Zona despejada<small>Cierra alertas activas</small></button>
+        </div>
+        <label>Mensaje adicional (opcional, sin datos clasificados)<textarea id="mensaje" rows="2" maxlength="280"></textarea></label>
+        <button class="enviar" id="btnEnviar" disabled>Seleccione zona y tipo</button>
+        <div class="error" id="eError"></div>
+      </section>
+    </div>
+
+    <div>
+      <section class="tarjeta" style="margin-top:0">
+        <h3>Red de aviso</h3>
+        <div class="stats" style="grid-template-columns:1fr 1fr">
+          <div class="stat"><b id="sPersonal">0</b><span>PERSONAL INSCRITO</span></div>
+          <div class="stat"><b id="sPush">0</b><span>TELÉFONOS CON PUSH</span></div>
+        </div>
+      </section>
+      <section class="tarjeta">
+        <h3>Alertas activas</h3>
+        <div id="activas"><div class="vacio">Sin alertas activas.</div></div>
+      </section>
+      <section class="tarjeta">
+        <h3>Bitácora de auditoría</h3>
+        <div class="log" id="log"></div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<!-- Modal de confirmación -->
+<div class="modal oculto" id="modal">
+  <div class="caja">
+    <h3 id="mTit"></h3>
+    <p class="vacio" id="mTxt"></p>
+    <div id="mReal">
+      <label>Para confirmar una alerta <b style="color:var(--rojo)">REAL</b>, escriba <b>ENVIAR</b><input id="mConf" autocomplete="off"></label>
+    </div>
+    <div class="fila" style="margin-top:16px">
+      <button class="btn" id="mCancelar">Cancelar</button>
+      <button class="btn primario" id="mOk">Emitir alerta</button>
+    </div>
+  </div>
+</div>
+
+<script src="/vendor/leaflet/leaflet.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/comun.js"></script>
+<script src="/c2/c2.js"></script>
+</body>
+</html>

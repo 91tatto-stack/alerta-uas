@@ -1,0 +1,81 @@
+<!doctype html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#0b0d10">
+<title>Alerta UAS</title>
+<link rel="manifest" href="/manifest.json">
+<link rel="icon" type="image/png" href="/favicon.png">
+<link rel="apple-touch-icon" href="/icono-192.png">
+<link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="/estilos.css">
+</head>
+<body>
+<div class="wrap">
+  <header class="cab">
+    <img class="logo" src="/logo.png" alt="Comando de Protección a la Fuerza">
+    <div>
+      <h1>Alerta por ataque con dron</h1>
+      <small class="mono">COPAF · RED DE AVISO AL PERSONAL · <span id="conexion">EN VIVO</span><span class="vivo" id="vivo"></span></small>
+    </div>
+  </header>
+
+  <div class="fila">
+    <button class="btn" id="btnActivar">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 5 6 9H2v6h4l5 4V5zM15.5 8.5a5 5 0 0 1 0 7M19 5a10 10 0 0 1 0 14"/></svg>
+      <span id="txtActivar">Activar avisos</span>
+    </button>
+    <a class="btn" href="/c2">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3z"/><path d="m9 12 2 2 4-4"/></svg>
+      Acceso autoridades
+    </a>
+  </div>
+
+  <section class="estado" id="estado">
+    <svg id="estadoIcono" viewBox="0 0 24 24" fill="none" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3z"/><path d="m9 12 2 2 4-4"/></svg>
+    <div><h2 id="estadoTit">Sin amenazas activas</h2><p id="estadoTxt">Mantén los avisos activados para enterarte al instante.</p></div>
+  </section>
+
+  <div class="mapa" id="mapa"></div>
+
+  <section class="tarjeta">
+    <h3>Historial</h3>
+    <div id="historial"><div class="vacio">Sin alertas registradas.</div></div>
+  </section>
+
+  <!-- Inscripción del personal -->
+  <section class="tarjeta" id="registro">
+    <h3>Inscripción del personal</h3>
+    <div class="aviso">Inscríbase una vez para recibir avisos en este teléfono y poder confirmar su estado al C2.</div>
+    <label>Grado y nombre<input id="rNombre" placeholder="TE. Juan Pérez"></label>
+    <label>Unidad / dependencia<input id="rUnidad" placeholder="CACOM 1"></label>
+    <label>Código de unidad<input id="rCodigo" placeholder="Entregado por su comando"></label>
+    <button class="btn primario" style="margin-top:14px;width:100%" id="btnRegistro">Inscribirme</button>
+    <div class="error" id="rError"></div>
+  </section>
+  <section class="tarjeta oculto" id="perfil"></section>
+</div>
+
+<!-- Pantalla de alarma -->
+<div class="alarma oculto" id="alarma">
+  <div class="etiq" id="aEtiq">ALERTA UAS</div>
+  <h2 id="aTit"></h2>
+  <p id="aInstr"></p>
+  <p id="aMsg"></p>
+  <div class="zona" id="aZona"></div>
+  <div id="aBotones">
+    <button class="si" data-e="A_SALVO">Estoy a salvo</button>
+    <button data-e="RECIBIDO">Recibido</button>
+    <button data-e="NECESITO_APOYO">Necesito apoyo</button>
+  </div>
+  <div class="ok oculto" id="aOk"></div>
+  <button id="aCerrar" class="oculto">Cerrar</button>
+</div>
+
+<script src="/vendor/leaflet/leaflet.js"></script>
+<script src="/socket.io/socket.io.js"></script>
+<script src="/comun.js"></script>
+<script src="/personal.js"></script>
+</body>
+</html>
