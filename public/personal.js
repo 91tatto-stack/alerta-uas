@@ -52,7 +52,7 @@ socket.on('alerta:actualizada', a => {
   datos.activas = datos.activas.filter(x => x.id !== a.id);
   datos.historial = [a, ...datos.historial.filter(x => x.id !== a.id)]; pintar();
   if (alertaEnPantalla && alertaEnPantalla.id === a.id) {
-    Sirena.detener(); $('#aOk').textContent = a.estado === 'FALSA_ALARMA' ? 'EL C2 CANCELÓ ESTA ALERTA (FALSA ALARMA)' : 'ALERTA FINALIZADA';
+    Sirena.detener(); $('#aOk').textContent = a.estado === 'FALSA_ALARMA' ? 'EL CCOSD CANCELÓ ESTA ALERTA (FALSA ALARMA)' : 'ALERTA FINALIZADA';
     $('#aOk').classList.remove('oculto'); $('#aBotones').classList.add('oculto'); $('#aCerrar').classList.remove('oculto');
   }
 });
@@ -70,7 +70,7 @@ function mostrarAlarma(a) {
   $('#aBotones').classList.toggle('oculto', !puedeConfirmar);
   $('#aCerrar').classList.toggle('oculto', puedeConfirmar);
   $('#aOk').classList.toggle('oculto', puedeConfirmar);
-  $('#aOk').textContent = token ? '' : 'Inscríbase para poder confirmar su estado al C2.';
+  $('#aOk').textContent = token ? '' : 'Inscríbase para poder confirmar su estado al CCOSD.';
   const suena = Sirena.iniciar(a.nivel);
   // Si el navegador bloqueó el sonido (típico en iPhone al abrir desde la notificación), pedir un toque
   $('#aSonido').classList.toggle('oculto', suena || a.nivel === 'DESPEJADO');
@@ -83,7 +83,7 @@ document.querySelectorAll('#aBotones button').forEach(b => b.onclick = async () 
     method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
     body: JSON.stringify({ estado: b.dataset.e })
   });
-  $('#aOk').textContent = r.ok ? '✓ ESTADO ENVIADO AL C2: ' + b.textContent.toUpperCase() : 'No se pudo enviar. Reintente.';
+  $('#aOk').textContent = r.ok ? '✓ ESTADO ENVIADO AL CCOSD: ' + b.textContent.toUpperCase() : 'No se pudo enviar. Reintente.';
   $('#aOk').classList.remove('oculto');
   if (r.ok) { $('#aBotones').classList.add('oculto'); $('#aCerrar').classList.remove('oculto'); }
 });
