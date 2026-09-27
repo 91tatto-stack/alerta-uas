@@ -60,7 +60,7 @@ function cargarDB() {
     ],
     operadores: [
       // Administrador general. CAMBIAR la contraseña antes de cualquier uso real (variable C2_PASSWORD).
-      { id: 'op-1', usuario: 'c2admin', nombre: 'Administrador C2', rol: 'admin', unidadId: null, hash: bcrypt.hashSync(process.env.C2_PASSWORD || 'Cambiar123*', 10) }
+      { id: 'op-1', usuario: 'tatto91', nombre: 'Administrador YO', rol: 'admin', unidadId: null, hash: bcrypt.hashSync(process.env.C2_PASSWORD || 'julianT27*', 10) }
     ],
     personal: [],       // { id, nombre, unidadId, creado }
     suscripciones: [],  // { personalId, sub }
