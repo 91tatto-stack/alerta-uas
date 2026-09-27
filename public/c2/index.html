@@ -40,12 +40,23 @@
   .log{font:12px 'JetBrains Mono',monospace;color:var(--suave);max-height:260px;overflow:auto}
   .log div{padding:5px 0;border-bottom:1px solid var(--borde)}
   #mapaC2{height:360px;cursor:crosshair}
+  .destinos{display:flex;flex-wrap:wrap;gap:8px}
+  .chip{display:flex;align-items:center;gap:6px;padding:9px 14px;border-radius:999px;border:1px solid var(--borde);font:600 13px 'JetBrains Mono',monospace;cursor:pointer;user-select:none}
+  .chip input{width:auto;margin:0}
+  .chip.sel{border-color:var(--azul);color:var(--azul);background:#101b29}
+  .unidad{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:12px;border:1px solid var(--borde);border-radius:12px;margin-top:8px}
+  .unidad .esc{width:44px;height:44px;object-fit:contain;flex:none}
+  .unidad .acc a{font-size:11px;color:var(--suave);margin-left:8px}
+  .unidad .cod{font:700 16px 'JetBrains Mono',monospace;letter-spacing:3px;color:var(--ambar)}
+  .unidad small{color:var(--suave);font-size:12px}
+  .sum{cursor:pointer;font-weight:700;font-size:14px;margin:12px 0 4px;color:var(--texto)}
+  select{appearance:auto}
 </style>
 </head>
 <body>
 <div class="wrap">
   <header class="cab">
-    <img class="logo" src="/logo.png" alt="Comando de Protección a la Fuerza">
+    <img class="logo" id="logoUnidad" src="/logo.png" alt="Escudo">
     <div><h1>Centro de Comando y Control</h1>
       <small class="mono">COPAF · EMISIÓN DE ALERTAS UAS · <span id="conexion">CONECTANDO</span><span class="vivo off" id="vivo"></span> <span id="quien"></span></small></div>
   </header>
@@ -66,6 +77,8 @@
         <h3>1 · Modo de emisión</h3>
         <div class="modo"><button data-m="SIMULACRO" class="sel">SIMULACRO</button><button data-m="REAL">REAL</button></div>
         <div class="bandera SIMULACRO" id="bandera">MODO SIMULACRO · las alertas se marcan como ejercicio</div>
+        <h3 style="margin-top:18px">Unidades destino</h3>
+        <div id="destinos" class="destinos"></div>
       </section>
       <section class="tarjeta">
         <h3>2 · Zona afectada <span class="vacio" style="font-weight:400">— toque el mapa para ubicar el centro</span></h3>
@@ -90,11 +103,34 @@
 
     <div>
       <section class="tarjeta" style="margin-top:0">
-        <h3>Red de aviso</h3>
-        <div class="stats" style="grid-template-columns:1fr 1fr">
-          <div class="stat"><b id="sPersonal">0</b><span>PERSONAL INSCRITO</span></div>
-          <div class="stat"><b id="sPush">0</b><span>TELÉFONOS CON PUSH</span></div>
-        </div>
+        <h3>Red de aviso por unidad</h3>
+        <div id="unidades"></div>
+        <div class="aviso">Entregue el <b>código</b> de cada unidad a su personal para que se inscriba. Si un código se filtra, renuévelo.</div>
+      </section>
+      <section class="tarjeta oculto" id="admin">
+        <h3>Administración</h3>
+        <details open><summary class="sum">Crear unidad</summary>
+          <div class="dos">
+            <label>Nombre<input id="uNombre" placeholder="Comando Aéreo de Combate No. 1"></label>
+            <label>Sigla<input id="uSigla" placeholder="CACOM-1"></label>
+          </div>
+          <div class="aviso">La ubicación de la unidad será el punto marcado en el mapa (o el centro del mapa).</div>
+          <button class="btn" style="margin-top:10px;width:100%" id="btnUnidad">Crear unidad</button>
+          <div class="error" id="uError"></div>
+        </details>
+        <details><summary class="sum">Crear operador de C2 para una unidad</summary>
+          <div class="dos" style="grid-template-columns:1fr 1fr">
+            <label>Usuario<input id="oUsuario" placeholder="c2.cacom1" autocomplete="off"></label>
+            <label>Grado y nombre<input id="oNombre" placeholder="TE. Pérez"></label>
+          </div>
+          <div class="dos" style="grid-template-columns:1fr 1fr">
+            <label>Contraseña (mín. 10)<input id="oClave" type="password" autocomplete="new-password"></label>
+            <label>Unidad<select id="oUnidad"></select></label>
+          </div>
+          <button class="btn" style="margin-top:10px;width:100%" id="btnOperador">Crear operador</button>
+          <div class="error" id="oError"></div>
+          <div id="operadores" style="margin-top:8px"></div>
+        </details>
       </section>
       <section class="tarjeta">
         <h3>Alertas activas</h3>
@@ -126,6 +162,7 @@
 <script src="/vendor/leaflet/leaflet.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/comun.js"></script>
+<input type="file" id="fEscudo" accept="image/png,image/jpeg,image/webp" class="oculto">
 <script src="/c2/c2.js"></script>
 </body>
 </html>

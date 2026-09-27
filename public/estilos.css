@@ -59,3 +59,5 @@ label{display:block;margin-top:12px;font-size:13px;color:var(--suave)}
 .leaflet-container{background:#0f1216!important}
 .teselas-oscuras{filter:invert(1) hue-rotate(180deg) brightness(.9) contrast(.85) saturate(.5)}
 .teselas-satelite{filter:brightness(.7)}
+
+.escudo-alarma{width:84px;height:84px;object-fit:contain;margin-bottom:14px;filter:drop-shadow(0 2px 8px rgba(0,0,0,.4))}

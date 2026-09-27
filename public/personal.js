@@ -11,7 +11,10 @@ const capa = L.layerGroup().addTo(mapa);
 // ---------- Cargar y pintar alertas ----------
 let datos = { activas: [], historial: [] };
 async function cargar() {
-  const r = await fetch('/api/alertas'); datos = await r.json(); pintar();
+  if (!token) { datos = { activas: [], historial: [] }; pintar(); return; }
+  const r = await fetch('/api/alertas', { headers: { Authorization: 'Bearer ' + token } });
+  if (r.status === 401) return cerrarSesion('Su inscripción ya no es válida. Inscríbase de nuevo.');
+  datos = await r.json(); pintar();
   // Si se abre la app desde la notificación, mostrar la alerta activa no vista
   const pendiente = datos.activas.find(a => !vistas.has(a.id));
   if (pendiente) mostrarAlarma(pendiente);
@@ -30,19 +33,19 @@ function pintar() {
     $('#estadoTxt').textContent = top.instruccion + ' · Zona: ' + top.zona.nombre;
     mapa.flyTo([top.zona.lat, top.zona.lng], 13);
   } else {
-    $('#estadoTit').textContent = 'Sin amenazas activas';
-    $('#estadoTxt').textContent = 'Mantén los avisos activados para enterarte al instante.';
+    $('#estadoTit').textContent = token ? 'Sin amenazas activas' : 'Inscríbase para recibir alertas';
+    $('#estadoTxt').textContent = token ? 'Mantén los avisos activados para enterarte al instante.' : 'Use el código que le entregó su unidad (abajo).';
   }
   const lista = [...datos.activas, ...datos.historial];
   $('#historial').innerHTML = lista.length ? lista.map(a => `
     <div class="item"><div class="meta mono"><span class="punto ${a.estado}"></span>${ESTADO_TXT[a.estado]} · ${fechaCorta(a.creada)}</div>
     <b>${esc(a.titulo)}</b><div class="vacio">${esc(a.zona.nombre)}</div></div>`).join('')
-    : '<div class="vacio">Sin alertas registradas.</div>';
+    : `<div class="vacio">${token ? 'Sin alertas registradas para su unidad.' : 'Inscríbase para ver el historial de su unidad.'}</div>`;
 }
 
 // ---------- Tiempo real ----------
 const socket = io();
-socket.on('connect', () => { $('#conexion').textContent = 'EN VIVO'; $('#vivo').classList.remove('off'); cargar(); });
+socket.on('connect', () => { if (token) socket.emit('unirse', token); $('#conexion').textContent = 'EN VIVO'; $('#vivo').classList.remove('off'); cargar(); });
 socket.on('disconnect', () => { $('#conexion').textContent = 'SIN CONEXIÓN'; $('#vivo').classList.add('off'); });
 socket.on('alerta:nueva', a => { datos.activas.unshift(a); pintar(); mostrarAlarma(a); });
 socket.on('alerta:actualizada', a => {
@@ -111,24 +114,42 @@ $('#btnActivar').onclick = async () => {
 };
 
 // ---------- Inscripción ----------
+function cerrarSesion(msg) {
+  localStorage.removeItem('tokenPersonal'); localStorage.removeItem('perfilPersonal');
+  if (msg) alert(msg);
+  location.reload();
+}
 function pintarPerfil() {
-  if (!perfil) return;
+  if (!perfil || !perfil.unidad || typeof perfil.unidad !== 'object') return;
   $('#registro').classList.add('oculto'); $('#perfil').classList.remove('oculto');
-  $('#perfil').innerHTML = `<h3>Inscrito en la red</h3><div class="vacio">${esc(perfil.nombre)} · ${esc(perfil.unidad)}</div>
+  $('#subUnidad').textContent = perfil.unidad.sigla;
+  $('#logoUnidad').src = perfil.unidad.escudo || '/logo.png'; $('#aEscudo').src = perfil.unidad.escudo || '/logo.png';
+  $('#perfil').innerHTML = `<h3>Inscrito en la red</h3><div class="vacio">${esc(perfil.nombre)}</div>
+    <div class="item" style="margin-top:10px;display:flex;gap:12px;align-items:center"><img src="${esc(perfil.unidad.escudo || '/logo.png')}" alt="" style="width:48px;height:48px;object-fit:contain">
+      <div><div class="meta mono">UNIDAD</div><b>${esc(perfil.unidad.sigla)} · ${esc(perfil.unidad.nombre)}</b></div></div>
     <button class="btn" style="margin-top:12px;width:100%" id="btnSalir">Cerrar sesión en este teléfono</button>`;
-  $('#btnSalir').onclick = () => { localStorage.removeItem('tokenPersonal'); localStorage.removeItem('perfilPersonal'); location.reload(); };
+  $('#btnSalir').onclick = () => { if (confirm('¿Dejar de recibir alertas en este teléfono?')) cerrarSesion(); };
+  if (!datos.activas.length) mapa.setView([perfil.unidad.lat, perfil.unidad.lng], 13);
 }
 $('#btnRegistro').onclick = async () => {
   $('#rError').textContent = '';
   const r = await fetch('/api/registro', { method: 'POST', headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ nombre: $('#rNombre').value.trim(), unidad: $('#rUnidad').value.trim(), codigo: $('#rCodigo').value.trim() }) });
+    body: JSON.stringify({ nombre: $('#rNombre').value.trim(), codigo: $('#rCodigo').value.trim() }) });
   const d = await r.json();
   if (!r.ok) return $('#rError').textContent = d.error;
   token = d.token; perfil = d.perfil;
   localStorage.setItem('tokenPersonal', token); localStorage.setItem('perfilPersonal', JSON.stringify(perfil));
-  pintarPerfil(); $('#btnActivar').click();
+  socket.emit('unirse', token);
+  pintarPerfil(); cargar(); $('#btnActivar').click();
 };
+// Inscripciones de la versión anterior (sin unidades) deben renovarse
+if (token && (!perfil || typeof perfil.unidad !== 'object')) { localStorage.removeItem('tokenPersonal'); localStorage.removeItem('perfilPersonal'); token = null; perfil = null; }
 pintarPerfil();
+// Actualizar el perfil desde el servidor (por si cambió la unidad)
+if (token) fetch('/api/perfil', { headers: { Authorization: 'Bearer ' + token } }).then(async r => {
+  if (r.status === 401) return cerrarSesion('Su inscripción ya no es válida. Inscríbase de nuevo.');
+  if (r.ok) { perfil = await r.json(); localStorage.setItem('perfilPersonal', JSON.stringify(perfil)); pintarPerfil(); }
+});
 
 function revisarSonido() {
   const abierta = !$('#alarma').classList.contains('oculto') && alertaEnPantalla && alertaEnPantalla.nivel !== 'DESPEJADO' && !$('#aBotones').classList.contains('oculto');

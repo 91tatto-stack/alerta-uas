@@ -14,10 +14,10 @@
 <body>
 <div class="wrap">
   <header class="cab">
-    <img class="logo" src="/logo.png" alt="Comando de Protección a la Fuerza">
+    <img class="logo" id="logoUnidad" src="/logo.png" alt="Escudo de la unidad">
     <div>
       <h1>Alerta por ataque con dron</h1>
-      <small class="mono">COPAF · RED DE AVISO AL PERSONAL · <span id="conexion">EN VIVO</span><span class="vivo" id="vivo"></span></small>
+      <small class="mono">COPAF · <span id="subUnidad">RED DE AVISO AL PERSONAL</span> · <span id="conexion">EN VIVO</span><span class="vivo" id="vivo"></span></small>
     </div>
   </header>
 
@@ -49,8 +49,8 @@
     <h3>Inscripción del personal</h3>
     <div class="aviso">Inscríbase una vez para recibir avisos en este teléfono y poder confirmar su estado al C2.</div>
     <label>Grado y nombre<input id="rNombre" placeholder="TE. Juan Pérez"></label>
-    <label>Unidad / dependencia<input id="rUnidad" placeholder="CACOM 1"></label>
-    <label>Código de unidad<input id="rCodigo" placeholder="Entregado por su comando"></label>
+    <label>Código de su unidad<input id="rCodigo" placeholder="Ej: K7M2QX" autocapitalize="characters" autocomplete="off" style="text-transform:uppercase;letter-spacing:3px"></label>
+    <div class="aviso">El código define a qué unidad pertenece. Lo entrega el C2 de su unidad.</div>
     <button class="btn primario" style="margin-top:14px;width:100%" id="btnRegistro">Inscribirme</button>
     <div class="error" id="rError"></div>
   </section>
@@ -59,6 +59,7 @@
 
 <!-- Pantalla de alarma -->
 <div class="alarma oculto" id="alarma">
+  <img id="aEscudo" class="escudo-alarma" src="/logo.png" alt="">
   <div class="etiq" id="aEtiq">ALERTA UAS</div>
   <h2 id="aTit"></h2>
   <p id="aInstr"></p>
