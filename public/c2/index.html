@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0b0d10">
-<title>C2 · Alerta UAS</title>
+<title>CCOSD · Alerta UAS</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/estilos.css">
@@ -118,7 +118,7 @@
           <button class="btn" style="margin-top:10px;width:100%" id="btnUnidad">Crear unidad</button>
           <div class="error" id="uError"></div>
         </details>
-        <details><summary class="sum">Crear operador de C2 para una unidad</summary>
+        <details><summary class="sum">Crear operador de CCOSD para una unidad</summary>
           <div class="dos" style="grid-template-columns:1fr 1fr">
             <label>Usuario<input id="oUsuario" placeholder="c2.cacom1" autocomplete="off"></label>
             <label>Grado y nombre<input id="oNombre" placeholder="TE. Pérez"></label>
@@ -162,6 +162,20 @@
 <script src="/vendor/leaflet/leaflet.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/comun.js"></script>
+<!-- Cambio de contraseña -->
+<div class="modal oculto" id="mClave">
+  <div class="caja">
+    <h3>Cambiar mi contraseña</h3>
+    <label>Contraseña actual<input id="cActual" type="password" autocomplete="current-password"></label>
+    <label>Nueva contraseña (mínimo 10 caracteres)<input id="cNueva" type="password" autocomplete="new-password"></label>
+    <label>Repita la nueva contraseña<input id="cNueva2" type="password" autocomplete="new-password"></label>
+    <div class="error" id="cError"></div>
+    <div class="fila" style="margin-top:16px">
+      <button class="btn" id="cCancelar">Cancelar</button>
+      <button class="btn primario" id="cOk">Guardar</button>
+    </div>
+  </div>
+</div>
 <input type="file" id="fEscudo" accept="image/png,image/jpeg,image/webp" class="oculto">
 <script src="/c2/c2.js"></script>
 </body>

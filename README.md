@@ -1,8 +1,17 @@
 # ALERTA UAS · Prototipo Fase 1
 
-Sistema de alerta temprana por ataque con dron. Un **Centro de Comando y Control (C2)** emite la alerta y el **personal** la recibe en el teléfono con alarma sonora, vibración y pantalla completa. Cada persona confirma su estado y el C2 lo ve en tiempo real.
+Sistema de alerta temprana por ataque con dron. Un **Centro de Comando y Control (CCOSD)** emite la alerta y el **personal** la recibe en el teléfono con alarma sonora, vibración y pantalla completa. Cada persona confirma su estado y el CCOSD lo ve en tiempo real.
 
 > ⚠️ Esto es un **prototipo académico/demostrativo**. No es para uso operacional sin el aval de TIC y ciberdefensa de la FAC. Consulte "Antes de un uso real" al final.
+
+## Usuario y contraseña del administrador principal
+
+Se definen al inicio de `server.js`:
+```js
+const ADMIN_USUARIO = 'c2admin';
+const ADMIN_CLAVE = 'Cambiar123*';
+```
+Se aplican **cada vez que arranca el servidor**, aunque ya existan datos. Si existen las variables de entorno `C2_USUARIO` / `C2_PASSWORD` (por ejemplo en Render), estas tienen prioridad. El usuario no distingue mayúsculas de minúsculas. Los operadores de unidad cambian su propia clave desde el panel (CAMBIAR CLAVE).
 
 ## Unidades (multi-unidad)
 
@@ -10,7 +19,7 @@ Sistema de alerta temprana por ataque con dron. Un **Centro de Comando y Control
 - **Administrador general** (`c2admin`): crea unidades y operadores, alerta a una, a varias o a todas las unidades, y ve todo.
 - **Operador de unidad**: solo alerta a su unidad y solo ve su personal, sus alertas y su bitácora.
 - El **personal** solo recibe y ve las alertas de su unidad.
-- **Escudo por unidad:** el administrador lo sube desde el C2 ("cambiar escudo"; PNG, JPG o WEBP; se reduce a 256 px). El personal ve el escudo de su unidad en el encabezado, en su perfil y en la pantalla de alarma. Sin escudo propio se muestra el del COPAF. Se guarda en `data/escudos/`.
+- **Escudo por unidad:** el administrador lo sube desde el CCOSD ("cambiar escudo"; PNG, JPG o WEBP; se reduce a 256 px). El personal ve el escudo de su unidad en el encabezado, en su perfil y en la pantalla de alarma. Sin escudo propio se muestra el del COPAF. Se guarda en `data/escudos/`.
 - Si un código se filtra, el administrador lo **renueva**. Los ya inscritos no se afectan.
 - Al arrancar por primera vez existe la unidad `PRUEBA`, con el código de la variable `CODIGO_UNIDAD` (por defecto `FAC2026`).
 
@@ -19,7 +28,7 @@ Sistema de alerta temprana por ataque con dron. Un **Centro de Comando y Control
 | Parte | Ruta | Función |
 |---|---|---|
 | Vista del personal (PWA) | `/` | Estado actual, mapa de zonas, historial, inscripción, alarma y confirmación |
-| Panel C2 | `/c2` | Login, modo SIMULACRO/REAL, zona en mapa, 3 plantillas, confirmación, tablero de respuestas, falsa alarma, bitácora |
+| Panel CCOSD | `/c2` | Login, modo SIMULACRO/REAL, zona en mapa, 3 plantillas, confirmación, tablero de respuestas, falsa alarma, bitácora |
 | Backend | `server.js` | API REST + Socket.IO (tiempo real) + Web Push |
 
 **Salvaguardas implementadas:**
@@ -45,7 +54,7 @@ Sistema de alerta temprana por ataque con dron. Un **Centro de Comando y Control
    ```
 5. Abra **http://localhost:3000/c2** e ingrese con el usuario `c2admin` y la contraseña `Cambiar123*`.
 6. En otra ventana (o en el celular) abra **http://localhost:3000**, inscríbase con el código de unidad `FAC2026` y toque **Activar avisos**.
-7. En el C2, toque el mapa, elija el tipo de alerta y emita. El teléfono sonará y mostrará la alarma.
+7. En el CCOSD, toque el mapa, elija el tipo de alerta y emita. El teléfono sonará y mostrará la alarma.
 
 **Para probar desde el celular en la misma red WiFi:** use la IP del computador, por ejemplo `http://192.168.1.10:3000`. Las notificaciones push y la instalación como app solo funcionan con **HTTPS** (o en `localhost`), así que para eso hay que publicarlo en internet (siguiente sección).
 
@@ -56,7 +65,8 @@ Opción gratuita y sencilla: **Render.com**
 2. En Render: *New → Web Service* y conecte el repositorio.
 3. Configure el *Build command* como `npm install` y el *Start command* como `npm start`.
 4. En *Environment* defina estas variables:
-   - `C2_PASSWORD`: una contraseña fuerte para `c2admin`
+   - `C2_USUARIO`: nombre del usuario administrador (por defecto `c2admin`)
+   - `C2_PASSWORD`: una contraseña fuerte para el administrador
    - `CODIGO_UNIDAD`: el código de la unidad de prueba inicial
    - `VAPID_CONTACT`: `mailto:su-correo@dominio`
 5. Agregue un *Persistent Disk* montado en `/opt/render/project/src/data`, para que las alertas y los inscritos no se borren al reiniciar.

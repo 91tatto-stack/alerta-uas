@@ -16,6 +16,11 @@ const { Server } = require('socket.io');
 const PORT = process.env.PORT || 3000;
 const DATA_DIR = process.env.DATA_DIR || path.join(__dirname, 'data');
 const CODIGO_UNIDAD = process.env.CODIGO_UNIDAD || 'FAC2026'; // código de la unidad inicial de prueba
+// ===== ADMINISTRADOR PRINCIPAL: cambie aquí el usuario y la contraseña por defecto =====
+// (Las variables de entorno C2_USUARIO y C2_PASSWORD, si existen, tienen prioridad.)
+const ADMIN_USUARIO = 'tatto91';
+const ADMIN_CLAVE = 'julianT27.';
+// Se aplican cada vez que arranca el servidor: después de cambiarlos, detenga (Ctrl+C) y vuelva a ejecutar npm start.
 const CONTACTO_VAPID = process.env.VAPID_CONTACT || 'mailto:admin@example.com';
 
 fs.mkdirSync(DATA_DIR, { recursive: true });
@@ -55,12 +60,12 @@ function cargarDB() {
   }
   return {
     unidades: [
-      // Unidad inicial de prueba. Las demás las crea el administrador desde el C2.
+      // Unidad inicial de prueba. Las demás las crea el administrador desde el CCOSD.
       { id: 'u-1', nombre: 'Unidad de prueba', sigla: 'PRUEBA', codigo: CODIGO_UNIDAD, lat: 4.65, lng: -74.1 }
     ],
     operadores: [
       // Administrador general. CAMBIAR la contraseña antes de cualquier uso real (variable C2_PASSWORD).
-      { id: 'op-1', usuario: 'tatto91', nombre: 'Administrador YO', rol: 'admin', unidadId: null, hash: bcrypt.hashSync(process.env.C2_PASSWORD || 'julianT27*', 10) }
+      { id: 'op-1', usuario: (process.env.C2_USUARIO || ADMIN_USUARIO).trim().toLowerCase(), nombre: 'Administrador CCOSD', rol: 'admin', unidadId: null, hash: bcrypt.hashSync(process.env.C2_PASSWORD || ADMIN_CLAVE, 10) }
     ],
     personal: [],       // { id, nombre, unidadId, creado }
     suscripciones: [],  // { personalId, sub }
@@ -76,6 +81,15 @@ function guardar() {
   clearTimeout(guardando);
   guardando = setTimeout(() => fs.writeFileSync(DB_FILE, JSON.stringify(db, null, 2)), 100);
 }
+// El administrador principal SIEMPRE toma el usuario y la clave de ADMIN_USUARIO/ADMIN_CLAVE
+// (o de las variables C2_USUARIO/C2_PASSWORD si existen) cada vez que arranca el servidor.
+(() => {
+  const adm = db.operadores.find(o => o.id === 'op-1') || db.operadores.find(o => o.rol === 'admin');
+  if (!adm) return;
+  adm.usuario = (process.env.C2_USUARIO || ADMIN_USUARIO).trim().toLowerCase();
+  const clave = process.env.C2_PASSWORD || ADMIN_CLAVE;
+  if (!bcrypt.compareSync(clave, adm.hash)) adm.hash = bcrypt.hashSync(clave, 10);
+})();
 guardar();
 function auditar(actor, accion, detalle, unidades = []) {
   db.auditoria.unshift({ fecha: new Date().toISOString(), actor, accion, detalle, unidades });
@@ -106,7 +120,7 @@ app.use((req, res, next) => { // cabeceras básicas de seguridad
 });
 app.use(express.static(path.join(__dirname, 'public')));
 app.use('/vendor/leaflet', express.static(path.join(__dirname, 'node_modules', 'leaflet', 'dist')));
-app.get('/c2', (req, res) => res.sendFile(path.join(__dirname, 'public', 'c2', 'index.html')));
+app.get(['/c2', '/ccosd'], (req, res) => res.sendFile(path.join(__dirname, 'public', 'c2', 'index.html')));
 
 const server = http.createServer(app);
 const io = new Server(server);
@@ -150,14 +164,22 @@ function limitar(max) {
   };
 }
 
-app.post('/api/c2/login', limitar(5), (req, res) => {
+// Solo los intentos FALLIDOS cuentan para el bloqueo (5 fallos en 15 min por IP)
+const fallos = new Map();
+app.post('/api/c2/login', (req, res) => {
+  const k = req.ip, now = Date.now();
+  const f = (fallos.get(k) || []).filter(t => now - t < 15 * 60 * 1000);
+  if (f.length >= 5) return res.status(429).json({ error: 'Demasiados intentos fallidos. Espere 15 minutos o reinicie el servidor.' });
   const { usuario, clave } = req.body || {};
-  const op = db.operadores.find(o => o.usuario === String(usuario || '').toLowerCase());
+  const u = String(usuario || '').trim().toLowerCase();
+  const op = db.operadores.find(o => o.usuario.trim().toLowerCase() === u);
   if (!op || !bcrypt.compareSync(String(clave || ''), op.hash)) {
-    auditar(String(usuario || '?'), 'LOGIN_FALLIDO', 'Intento de acceso al C2');
-    return res.status(401).json({ error: 'Credenciales incorrectas' });
+    f.push(now); fallos.set(k, f);
+    auditar(u || '?', 'LOGIN_FALLIDO', 'Intento de acceso al CCOSD');
+    return res.status(401).json({ error: `Credenciales incorrectas (${5 - f.length} intentos restantes)` });
   }
-  auditar(op.usuario, 'LOGIN', 'Ingreso al C2', op.unidadId ? [op.unidadId] : []);
+  fallos.delete(k);
+  auditar(op.usuario, 'LOGIN', 'Ingreso al CCOSD', op.unidadId ? [op.unidadId] : []);
   res.json({ token: firmar({ id: op.id, usuario: op.usuario, rol: 'c2' }, 12), perfil: perfilOperador(op) });
 });
 function perfilOperador(op) {
@@ -165,6 +187,18 @@ function perfilOperador(op) {
 }
 const publicaUnidad = u => ({ id: u.id, nombre: u.nombre, sigla: u.sigla, lat: u.lat, lng: u.lng, escudo: u.escudoV ? `/api/escudo/${u.id}?v=${u.escudoV}` : '/logo.png' });
 app.get('/api/c2/yo', auth('c2'), (req, res) => res.json(perfilOperador(req.op)));
+
+// Cambio de contraseña (cualquier operador, incluido el administrador)
+app.post('/api/c2/clave', auth('c2'), limitar(5), (req, res) => {
+  const { actual, nueva } = req.body || {};
+  if (esAdmin(req.op) && req.op.id === 'op-1') return res.status(400).json({ error: 'La clave del administrador principal se cambia en server.js (ADMIN_CLAVE) o en la variable C2_PASSWORD' });
+  if (!bcrypt.compareSync(String(actual || ''), req.op.hash)) return res.status(400).json({ error: 'La contraseña actual no es correcta' });
+  if (String(nueva || '').length < 10) return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 10 caracteres' });
+  if (nueva === actual) return res.status(400).json({ error: 'La nueva contraseña debe ser diferente' });
+  req.op.hash = bcrypt.hashSync(String(nueva), 10); guardar();
+  auditar(req.op.usuario, 'CLAVE_CAMBIADA', 'Cambio de contraseña', req.op.unidadId ? [req.op.unidadId] : []);
+  res.json({ ok: true });
+});
 
 // ---------- Inscripción del personal: el código define la unidad ----------
 app.post('/api/registro', limitar(20), (req, res) => {
@@ -243,7 +277,7 @@ app.get('/api/alertas', auth('personal'), (req, res) => {
     historial: mias.filter(a => a.estado !== 'ACTIVA').slice(0, 30).map(alertaPublica)
   });
 });
-// C2: alertas de las unidades a su cargo
+// CCOSD: alertas de las unidades a su cargo
 app.get('/api/c2/alertas', auth('c2'), (req, res) => {
   const vis = db.alertas.filter(a => puedeVer(req.op, a));
   res.json({ activas: vis.filter(a => a.estado === 'ACTIVA').map(alertaPublica), historial: vis.filter(a => a.estado !== 'ACTIVA').slice(0, 30).map(alertaPublica) });
@@ -332,7 +366,7 @@ app.post('/api/c2/unidades/:id/codigo', auth('c2'), soloAdmin, (req, res) => { /
 });
 
 // ---------- Escudo de cada unidad ----------
-// El C2 lo redimensiona a 256 px antes de enviarlo; aquí se valida que sea una imagen PNG/JPEG/WEBP real.
+// El CCOSD lo redimensiona a 256 px antes de enviarlo; aquí se valida que sea una imagen PNG/JPEG/WEBP real.
 app.post('/api/c2/unidades/:id/escudo', auth('c2'), soloAdmin, (req, res) => {
   const u = unidad(req.params.id); if (!u) return res.status(404).json({ error: 'No existe' });
   const m = /^data:image\/(png|jpeg|webp);base64,([A-Za-z0-9+/=]+)$/.exec((req.body && req.body.imagen) || '');
@@ -386,7 +420,7 @@ app.post('/api/alertas/:id/confirmar', auth('personal'), (req, res) => {
   if (!ESTADOS_CONFIRMACION.includes(estado)) return res.status(400).json({ error: 'Estado inválido' });
   db.confirmaciones = db.confirmaciones.filter(c => !(c.alertaId === a.id && c.personalId === req.personal.id));
   db.confirmaciones.push({ alertaId: a.id, personalId: req.personal.id, estado, fecha: new Date().toISOString() }); guardar();
-  // El C2 vuelve a consultar el resumen (cada operador ve solo su unidad)
+  // El CCOSD vuelve a consultar el resumen (cada operador ve solo su unidad)
   io.to('c2:admin').to('c2:' + req.personal.unidadId).emit('confirmacion', { alertaId: a.id });
   res.json({ ok: true });
 });
@@ -405,6 +439,6 @@ io.on('connection', socket => {
 server.listen(PORT, () => {
   console.log(`\n  ALERTA UAS en marcha`);
   console.log(`  Personal:  http://localhost:${PORT}/`);
-  console.log(`  C2:        http://localhost:${PORT}/c2   (usuario: c2admin)`);
+  console.log(`  CCOSD:     http://localhost:${PORT}/ccosd   (administrador: ${db.operadores.find(o => o.rol === 'admin').usuario})`);
   console.log(`  Unidades:  ${db.unidades.map(u => `${u.sigla} (código ${u.codigo})`).join(' · ')}\n`);
 });

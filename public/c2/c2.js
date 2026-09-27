@@ -26,7 +26,8 @@ function salir() { sessionStorage.removeItem('tokenC2'); location.reload(); }
 async function iniciar() {
   try { yo = await api('/api/c2/yo'); } catch { return; }
   $('#login').classList.add('oculto'); $('#panel').classList.remove('oculto');
-  $('#quien').innerHTML = `· ${esc(yo.usuario.toUpperCase())} · ${yo.admin ? 'ADMINISTRADOR GENERAL' : esc(yo.unidad.sigla)} · <a href="#" id="btnSalir" style="color:var(--suave)">SALIR</a>`;
+  $('#quien').innerHTML = `· ${esc(yo.usuario.toUpperCase())} · ${yo.admin ? 'ADMINISTRADOR GENERAL' : esc(yo.unidad.sigla)} ${yo.admin ? '' : '· <a href="#" id="btnClave" style="color:var(--suave)">CAMBIAR CLAVE</a> '}· <a href="#" id="btnSalir" style="color:var(--suave)">SALIR</a>`;
+  if ($('#btnClave')) $('#btnClave').onclick = e => { e.preventDefault(); ['#cActual', '#cNueva', '#cNueva2'].forEach(x => $(x).value = ''); $('#cError').textContent = ''; $('#mClave').classList.remove('oculto'); $('#cActual').focus(); };
   $('#btnSalir').onclick = e => { e.preventDefault(); salir(); };
   $('#admin').classList.toggle('oculto', !yo.admin);
   if (yo.unidad) $('#logoUnidad').src = yo.unidad.escudo;
@@ -47,6 +48,18 @@ async function iniciar() {
   if (yo.admin) cargarOperadores();
 }
 
+// ---------- Cambio de contraseña ----------
+$('#cCancelar').onclick = () => $('#mClave').classList.add('oculto');
+$('#cOk').onclick = async () => {
+  $('#cError').style.color = ''; $('#cError').textContent = '';
+  if ($('#cNueva').value !== $('#cNueva2').value) return $('#cError').textContent = 'Las contraseñas nuevas no coinciden';
+  try {
+    await api('/api/c2/clave', { method: 'POST', body: JSON.stringify({ actual: $('#cActual').value, nueva: $('#cNueva').value }) });
+    $('#cError').style.color = 'var(--verde)'; $('#cError').textContent = '✓ Contraseña actualizada';
+    setTimeout(() => $('#mClave').classList.add('oculto'), 1200);
+  } catch (e) { $('#cError').textContent = e.message; }
+};
+
 // ---------- Unidades ----------
 async function cargarUnidades() {
   unidades = await api('/api/c2/unidades');
@@ -56,7 +69,7 @@ async function cargarUnidades() {
     <div class="unidad">
       <div style="display:flex;gap:12px;align-items:center"><img class="esc" src="${esc(u.escudo)}" alt="">
         <div><b>${esc(u.sigla)}</b> <small>${esc(u.nombre)}</small><br>
-        <small>${u.personal} inscritos · ${u.push} con avisos push${u.operadores.length ? ' · C2: ' + u.operadores.map(esc).join(', ') : ''}</small>
+        <small>${u.personal} inscritos · ${u.push} con avisos push${u.operadores.length ? ' · CCOSD: ' + u.operadores.map(esc).join(', ') : ''}</small>
         ${yo.admin ? `<div class="acc"><a href="#" style="margin-left:0" onclick="elegirEscudo('${u.id}');return false">cambiar escudo</a>${u.escudo !== '/logo.png' ? `<a href="#" onclick="quitarEscudo('${u.id}');return false">quitar</a>` : ''}</div>` : ''}</div></div>
       <div style="text-align:right"><small>CÓDIGO</small><div class="cod">${esc(u.codigo)}</div>
         ${yo.admin ? `<a href="#" style="font-size:11px;color:var(--suave)" onclick="renovar('${u.id}');return false">renovar</a>` : ''}</div>
