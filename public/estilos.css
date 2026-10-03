@@ -61,3 +61,4 @@ label{display:block;margin-top:12px;font-size:13px;color:var(--suave)}
 .teselas-satelite{filter:brightness(.7)}
 
 .escudo-alarma{width:84px;height:84px;object-fit:contain;margin-bottom:14px;filter:drop-shadow(0 2px 8px rgba(0,0,0,.4))}
+.lnk{font-size:12px;color:var(--suave);margin-right:10px}.lnk.rojo{color:var(--rojo)}

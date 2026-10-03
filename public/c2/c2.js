@@ -44,7 +44,7 @@ async function iniciar() {
   socket.on('alerta:nueva', refrescar);
   socket.on('alerta:actualizada', refrescar);
   socket.on('confirmacion', async d => { try { confirmaciones[d.alertaId] = await api(`/api/c2/alertas/${d.alertaId}/confirmaciones`); pintarActivas(); } catch {} });
-  setInterval(() => { cargarUnidades(); cargarBitacora(); }, 20000);
+  setInterval(() => { cargarUnidades(); cargarBitacora(); cargarPersonal(); }, 20000);
   if (yo.admin) cargarOperadores();
 }
 
@@ -70,7 +70,7 @@ async function cargarUnidades() {
       <div style="display:flex;gap:12px;align-items:center"><img class="esc" src="${esc(u.escudo)}" alt="">
         <div><b>${esc(u.sigla)}</b> <small>${esc(u.nombre)}</small><br>
         <small>${u.personal} inscritos · ${u.push} con avisos push${u.operadores.length ? ' · CCOSD: ' + u.operadores.map(esc).join(', ') : ''}</small>
-        ${yo.admin ? `<div class="acc"><a href="#" style="margin-left:0" onclick="elegirEscudo('${u.id}');return false">cambiar escudo</a>${u.escudo !== '/logo.png' ? `<a href="#" onclick="quitarEscudo('${u.id}');return false">quitar</a>` : ''}</div>` : ''}</div></div>
+        ${yo.admin ? `<div class="acc"><a href="#" style="margin-left:0" onclick="editarUnidad('${u.id}');return false">editar</a><a href="#" onclick="elegirEscudo('${u.id}');return false">cambiar escudo</a>${u.escudo !== '/logo.png' ? `<a href="#" onclick="quitarEscudo('${u.id}');return false">quitar</a>` : ''}</div>` : ''}</div></div>
       <div style="text-align:right"><small>CÓDIGO</small><div class="cod">${esc(u.codigo)}</div>
         ${yo.admin ? `<a href="#" style="font-size:11px;color:var(--suave)" onclick="renovar('${u.id}');return false">renovar</a>` : ''}</div>
     </div>`).join('') || '<div class="vacio">Sin unidades.</div>';
@@ -92,6 +92,27 @@ function cargarUnidadesUI() { // redibuja sin volver a pedir datos
   $('#dTodas').checked = todas; $('#dTodas').parentElement.classList.toggle('sel', todas);
   validar();
 }
+// ---------- Editar / eliminar unidad ----------
+let editando = null;
+function editarUnidad(id) {
+  const u = unidades.find(x => x.id === id); if (!u) return; editando = u;
+  $('#eNombre').value = u.nombre; $('#eSigla').value = u.sigla; $('#eMover').checked = false;
+  $('#eMover').disabled = !zona; $('#eMoverTxt').textContent = zona ? 'Usar el punto marcado en el mapa como nueva ubicación' : 'Para cambiar la ubicación, primero toque el mapa';
+  $('#eError').textContent = ''; $('#mUnidad').classList.remove('oculto'); $('#eNombre').focus();
+}
+$('#eCancelar').onclick = () => $('#mUnidad').classList.add('oculto');
+$('#eOk').onclick = async () => {
+  $('#eError').textContent = '';
+  try {
+    await api(`/api/c2/unidades/${editando.id}`, { method: 'PUT', body: JSON.stringify({ nombre: $('#eNombre').value, sigla: $('#eSigla').value, ubicacion: $('#eMover').checked ? zona : null }) });
+    $('#mUnidad').classList.add('oculto'); cargarUnidades(); cargarPersonal(); cargarOperadores();
+  } catch (e) { $('#eError').textContent = e.message; }
+};
+$('#eEliminar').onclick = async () => {
+  if (!confirm(`¿Eliminar la unidad ${editando.sigla}? Esta acción no se puede deshacer.`)) return;
+  try { await api(`/api/c2/unidades/${editando.id}`, { method: 'DELETE' }); destinos.delete(editando.id); $('#mUnidad').classList.add('oculto'); cargarUnidades(); cargarOperadores(); }
+  catch (e) { $('#eError').textContent = e.message; }
+};
 async function renovar(id) {
   if (!confirm('¿Generar un código nuevo? El anterior dejará de servir para nuevas inscripciones (los ya inscritos no se afectan).')) return;
   await api(`/api/c2/unidades/${id}/codigo`, { method: 'POST' }); cargarUnidades();
@@ -129,7 +150,10 @@ async function quitarEscudo(id) {
 // ---------- Operadores ----------
 async function cargarOperadores() {
   const ops = await api('/api/c2/operadores');
-  $('#operadores').innerHTML = ops.map(o => `<div class="persona"><span>${esc(o.usuario)} <span class="vacio">· ${esc(o.nombre)}</span></span><span class="tag">${esc(o.unidad)}</span></div>`).join('');
+  $('#operadores').innerHTML = ops.map(o => `<div class="persona"><span>${esc(o.usuario)} <span class="vacio">· ${esc(o.nombre)}</span><br>
+      ${o.principal ? '<span class="vacio" style="font-size:11px">Administrador principal (clave en Render)</span>'
+        : `<a href="#" class="lnk" onclick="claveOperador('${o.id}','${esc(o.usuario)}');return false">cambiar clave</a> <a href="#" class="lnk rojo" onclick="eliminarOperador('${o.id}','${esc(o.usuario)}');return false">eliminar</a>`}</span>
+      <span class="tag">${esc(o.unidad)}</span></div>`).join('');
 }
 $('#btnOperador').onclick = async () => {
   $('#oError').textContent = '';
@@ -140,6 +164,36 @@ $('#btnOperador').onclick = async () => {
     cargarOperadores(); cargarUnidades();
   } catch (e) { $('#oError').style.color = ''; $('#oError').textContent = e.message; }
 };
+
+async function claveOperador(id, usuario) {
+  const c = prompt(`Nueva contraseña para ${usuario} (mínimo 10 caracteres):`);
+  if (c === null) return;
+  try { await api(`/api/c2/operadores/${id}/clave`, { method: 'POST', body: JSON.stringify({ clave: c }) }); alert(`✓ Contraseña de ${usuario} actualizada. Sus sesiones abiertas se cerraron.`); }
+  catch (e) { alert(e.message); }
+}
+async function eliminarOperador(id, usuario) {
+  if (!confirm(`¿Eliminar al operador ${usuario}? Ya no podrá ingresar.`)) return;
+  try { await api(`/api/c2/operadores/${id}`, { method: 'DELETE' }); cargarOperadores(); cargarUnidades(); } catch (e) { alert(e.message); }
+}
+
+// ---------- Personal inscrito ----------
+let personal = [];
+async function cargarPersonal() {
+  try { personal = await api('/api/c2/personal'); pintarPersonal(); } catch {}
+}
+function pintarPersonal() {
+  const q = $('#pBuscar').value.trim().toLowerCase();
+  const lista = personal.filter(p => !q || p.nombre.toLowerCase().includes(q) || (p.unidad || '').toLowerCase().includes(q));
+  $('#personal').innerHTML = lista.map(p => `<div class="persona"><span>${esc(p.nombre)} <span class="vacio">· ${esc(p.unidad)} ${p.push ? '· push ✓' : '· sin push'}</span></span>
+    <a href="#" class="lnk rojo" onclick="eliminarPersonal('${p.id}');return false">dar de baja</a></div>`).join('')
+    || `<div class="vacio">${personal.length ? 'Sin resultados.' : 'Nadie inscrito todavía.'}</div>`;
+}
+$('#pBuscar').oninput = pintarPersonal;
+async function eliminarPersonal(id) {
+  const p = personal.find(x => x.id === id); if (!p) return;
+  if (!confirm(`¿Dar de baja a ${p.nombre} (${p.unidad})? Su teléfono dejará de recibir alertas.`)) return;
+  try { await api(`/api/c2/personal/${id}`, { method: 'DELETE' }); cargarPersonal(); cargarUnidades(); } catch (e) { alert(e.message); }
+}
 
 // ---------- Zona ----------
 function pintarSeleccion() {
@@ -207,7 +261,7 @@ async function refrescar() {
   activas = d.activas;
   capa.clearLayers(); [...d.activas, ...d.historial.slice(0, 5)].forEach(a => dibujarZona(mapa, a, capa));
   await Promise.all(activas.map(async a => { confirmaciones[a.id] = await api(`/api/c2/alertas/${a.id}/confirmaciones`); }));
-  pintarActivas(); cargarBitacora(); cargarUnidades();
+  pintarActivas(); cargarBitacora(); cargarUnidades(); cargarPersonal();
 }
 async function cargarBitacora() {
   try {

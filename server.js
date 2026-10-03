@@ -19,7 +19,7 @@ const CODIGO_UNIDAD = process.env.CODIGO_UNIDAD || 'FAC2026'; // código de la u
 // ===== ADMINISTRADOR PRINCIPAL: cambie aquí el usuario y la contraseña por defecto =====
 // (Las variables de entorno C2_USUARIO y C2_PASSWORD, si existen, tienen prioridad.)
 const ADMIN_USUARIO = 'tatto91';
-const ADMIN_CLAVE = 'julianT27.';
+const ADMIN_CLAVE = 'Cambiar123*';
 // Se aplican cada vez que arranca el servidor: después de cambiarlos, detenga (Ctrl+C) y vuelva a ejecutar npm start.
 const CONTACTO_VAPID = process.env.VAPID_CONTACT || 'mailto:admin@example.com';
 
@@ -140,7 +140,7 @@ function auth(rol) {
       }
       if (data.rol === 'c2') {
         const op = db.operadores.find(x => x.id === data.id);
-        if (!op) return res.status(401).json({ error: 'Operador no existe' });
+        if (!op || (op.tv || 0) !== (data.tv || 0)) return res.status(401).json({ error: 'Sesión cerrada. Ingrese de nuevo.' });
         req.op = op;
       }
       req.user = data; next();
@@ -180,7 +180,7 @@ app.post('/api/c2/login', (req, res) => {
   }
   fallos.delete(k);
   auditar(op.usuario, 'LOGIN', 'Ingreso al CCOSD', op.unidadId ? [op.unidadId] : []);
-  res.json({ token: firmar({ id: op.id, usuario: op.usuario, rol: 'c2' }, 12), perfil: perfilOperador(op) });
+  res.json({ token: firmar({ id: op.id, usuario: op.usuario, rol: 'c2', tv: op.tv || 0 }, 12), perfil: perfilOperador(op) });
 });
 function perfilOperador(op) {
   return { usuario: op.usuario, nombre: op.nombre, admin: esAdmin(op), unidad: op.unidadId ? unidad(op.unidadId) && publicaUnidad(unidad(op.unidadId)) : null };
@@ -196,6 +196,7 @@ app.post('/api/c2/clave', auth('c2'), limitar(5), (req, res) => {
   if (String(nueva || '').length < 10) return res.status(400).json({ error: 'La nueva contraseña debe tener al menos 10 caracteres' });
   if (nueva === actual) return res.status(400).json({ error: 'La nueva contraseña debe ser diferente' });
   req.op.hash = bcrypt.hashSync(String(nueva), 10); guardar();
+  // (la sesión actual sigue abierta; las de otros equipos con la clave vieja también, hasta 12 h)
   auditar(req.op.usuario, 'CLAVE_CAMBIADA', 'Cambio de contraseña', req.op.unidadId ? [req.op.unidadId] : []);
   res.json({ ok: true });
 });
@@ -249,7 +250,7 @@ async function enviarPush(alerta) {
 // ---------- Alertas ----------
 function alertaPublica(a) {
   return { id: a.id, nivel: a.nivel, modo: a.modo, titulo: a.titulo, instruccion: a.instruccion, mensaje: a.mensaje,
-           zona: a.zona, estado: a.estado, creada: a.creada, cerrada: a.cerrada, unidades: a.unidades, siglas: siglas(a.unidades) };
+           zona: a.zona, estado: a.estado, creada: a.creada, cerrada: a.cerrada, unidades: a.unidades, siglas: a.siglasGuardadas || siglas(a.unidades) };
 }
 function resumenConfirmaciones(alerta, op) {
   const visibles = new Set(unidadesDe(op).filter(id => alerta.unidades.includes(id)));
@@ -358,6 +359,34 @@ app.post('/api/c2/unidades', auth('c2'), soloAdmin, (req, res) => {
   auditar(req.op.usuario, 'UNIDAD_CREADA', `${u.sigla} · ${u.nombre}`, [u.id]);
   res.json(resumenUnidad(u, true));
 });
+// Editar nombre, sigla y (opcional) ubicación de una unidad
+app.put('/api/c2/unidades/:id', auth('c2'), soloAdmin, (req, res) => {
+  const u = unidad(req.params.id); if (!u) return res.status(404).json({ error: 'No existe' });
+  const nombre = String((req.body && req.body.nombre) || '').trim(), sigla = String((req.body && req.body.sigla) || '').trim().toUpperCase();
+  if (!nombre || !sigla) return res.status(400).json({ error: 'Nombre y sigla son obligatorios' });
+  if (db.unidades.some(x => x.id !== u.id && x.sigla.toUpperCase() === sigla)) return res.status(400).json({ error: 'Ya existe otra unidad con esa sigla' });
+  const antes = `${u.sigla} · ${u.nombre}`;
+  u.nombre = nombre.slice(0, 80); u.sigla = sigla.slice(0, 20);
+  const ub = req.body.ubicacion;
+  if (ub && typeof ub.lat === 'number' && typeof ub.lng === 'number') { u.lat = ub.lat; u.lng = ub.lng; }
+  guardar();
+  auditar(req.op.usuario, 'UNIDAD_EDITADA', `${antes} → ${u.sigla} · ${u.nombre}`, [u.id]);
+  res.json(resumenUnidad(u, true));
+});
+// Eliminar unidad: solo si ya no tiene personal ni operadores (para no dejar a nadie sin unidad)
+app.delete('/api/c2/unidades/:id', auth('c2'), soloAdmin, (req, res) => {
+  const u = unidad(req.params.id); if (!u) return res.status(404).json({ error: 'No existe' });
+  const np = db.personal.filter(p => p.unidadId === u.id).length, no = db.operadores.filter(o => o.unidadId === u.id).length;
+  if (np || no) return res.status(400).json({ error: `No se puede eliminar ${u.sigla}: tiene ${np} inscritos y ${no} operadores. Dé de baja al personal y elimine los operadores primero.` });
+  if (db.alertas.some(a => a.estado === 'ACTIVA' && a.unidades.includes(u.id))) return res.status(400).json({ error: `${u.sigla} tiene alertas activas. Finalícelas primero.` });
+  db.unidades = db.unidades.filter(x => x.id !== u.id);
+  try { fs.unlinkSync(path.join(ESCUDOS_DIR, u.id + '.img')); } catch {}
+  // En el historial se conserva la sigla con que se envió la alerta
+  db.alertas.forEach(a => { if (a.unidades.includes(u.id)) a.siglasGuardadas = a.siglasGuardadas || siglas(a.unidades); });
+  guardar();
+  auditar(req.op.usuario, 'UNIDAD_ELIMINADA', `${u.sigla} · ${u.nombre}`);
+  res.json({ ok: true });
+});
 app.post('/api/c2/unidades/:id/codigo', auth('c2'), soloAdmin, (req, res) => { // por si el código se filtra
   const u = unidad(req.params.id); if (!u) return res.status(404).json({ error: 'No existe' });
   u.codigo = nuevoCodigo(); guardar();
@@ -397,7 +426,7 @@ app.get('/api/escudo/:id', (req, res) => {
 
 // ---------- Operadores (solo admin) ----------
 app.get('/api/c2/operadores', auth('c2'), soloAdmin, (req, res) => {
-  res.json(db.operadores.map(o => ({ usuario: o.usuario, nombre: o.nombre, rol: o.rol, unidad: o.unidadId ? (unidad(o.unidadId) || {}).sigla : 'TODAS' })));
+  res.json(db.operadores.map(o => ({ id: o.id, principal: o.id === 'op-1', usuario: o.usuario, nombre: o.nombre, rol: o.rol, unidad: o.unidadId ? (unidad(o.unidadId) || {}).sigla : 'TODAS' })));
 });
 app.post('/api/c2/operadores', auth('c2'), soloAdmin, (req, res) => {
   const { usuario, nombre, clave, unidadId } = req.body || {};
@@ -409,6 +438,46 @@ app.post('/api/c2/operadores', auth('c2'), soloAdmin, (req, res) => {
   const op = { id: 'op-' + crypto.randomUUID().slice(0, 8), usuario: user, nombre: String(nombre || user).slice(0, 80), rol: 'operador', unidadId, hash: bcrypt.hashSync(String(clave), 10) };
   db.operadores.push(op); guardar();
   auditar(req.op.usuario, 'OPERADOR_CREADO', `${op.usuario} → ${unidad(unidadId).sigla}`, [unidadId]);
+  res.json({ ok: true });
+});
+
+// Restablecer la contraseña de un operador (admin). Cierra sus sesiones abiertas.
+app.post('/api/c2/operadores/:id/clave', auth('c2'), soloAdmin, (req, res) => {
+  const op = db.operadores.find(o => o.id === req.params.id);
+  if (!op) return res.status(404).json({ error: 'No existe' });
+  if (op.id === 'op-1') return res.status(400).json({ error: 'La clave del administrador principal se cambia en Render (C2_PASSWORD)' });
+  const clave = String((req.body && req.body.clave) || '');
+  if (clave.length < 10) return res.status(400).json({ error: 'La contraseña debe tener al menos 10 caracteres' });
+  op.hash = bcrypt.hashSync(clave, 10); op.tv = (op.tv || 0) + 1; guardar();
+  auditar(req.op.usuario, 'CLAVE_RESTABLECIDA', op.usuario, op.unidadId ? [op.unidadId] : []);
+  res.json({ ok: true });
+});
+// Eliminar operador (admin). No se puede eliminar al principal ni a uno mismo.
+app.delete('/api/c2/operadores/:id', auth('c2'), soloAdmin, (req, res) => {
+  const op = db.operadores.find(o => o.id === req.params.id);
+  if (!op) return res.status(404).json({ error: 'No existe' });
+  if (op.id === 'op-1' || op.id === req.op.id) return res.status(400).json({ error: 'No se puede eliminar al administrador principal' });
+  db.operadores = db.operadores.filter(o => o.id !== op.id); guardar();
+  auditar(req.op.usuario, 'OPERADOR_ELIMINADO', op.usuario, op.unidadId ? [op.unidadId] : []);
+  res.json({ ok: true });
+});
+
+// ---------- Personal inscrito (admin: todos; operador: su unidad) ----------
+app.get('/api/c2/personal', auth('c2'), (req, res) => {
+  const vis = new Set(unidadesDe(req.op));
+  const conPush = new Set(db.suscripciones.map(s => s.personalId));
+  res.json(db.personal.filter(p => vis.has(p.unidadId)).map(p => ({
+    id: p.id, nombre: p.nombre, unidad: (unidad(p.unidadId) || {}).sigla, creado: p.creado, push: conPush.has(p.id) })));
+});
+// Dar de baja: borra la inscripción y sus avisos push. El teléfono queda fuera de la red.
+app.delete('/api/c2/personal/:id', auth('c2'), (req, res) => {
+  const p = db.personal.find(x => x.id === req.params.id);
+  if (!p || !unidadesDe(req.op).includes(p.unidadId)) return res.status(404).json({ error: 'No existe' });
+  db.personal = db.personal.filter(x => x.id !== p.id);
+  db.suscripciones = db.suscripciones.filter(s => s.personalId !== p.id);
+  db.confirmaciones = db.confirmaciones.filter(c => c.personalId !== p.id);
+  guardar();
+  auditar(req.op.usuario, 'PERSONAL_ELIMINADO', `${p.nombre} · ${(unidad(p.unidadId) || {}).sigla}`, [p.unidadId]);
   res.json({ ok: true });
 });
 

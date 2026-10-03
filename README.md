@@ -13,6 +13,18 @@ const ADMIN_CLAVE = 'Cambiar123*';
 ```
 Se aplican **cada vez que arranca el servidor**, aunque ya existan datos. Si existen las variables de entorno `C2_USUARIO` / `C2_PASSWORD` (por ejemplo en Render), estas tienen prioridad. El usuario no distingue mayúsculas de minúsculas. Los operadores de unidad cambian su propia clave desde el panel (CAMBIAR CLAVE).
 
+## Gestión de usuarios (panel CCOSD)
+
+- **Operadores** (solo administrador, en Administración → Operadores): crear, **cambiar clave** (cierra sus sesiones abiertas) y **eliminar**. El administrador principal no se elimina; su clave se define en Render (`C2_PASSWORD`).
+- **Personal inscrito**: lista con buscador. El administrador ve a todos; cada operador ve solo su unidad. **Dar de baja** borra la inscripción y los avisos push; el teléfono vuelve a la pantalla de inscripción.
+- El personal no tiene contraseña: se inscribe con el código de su unidad.
+- **Unidades** (solo administrador): **editar** nombre, sigla y ubicación (el código, el escudo y el personal no cambian) y **eliminar** (solo si no tiene personal, operadores ni alertas activas).
+
+## Sonido de alerta
+
+- **Ataque:** `public/sonidos/ataque.mp3`, en bucle hasta que la persona responda. Para cambiarlo, reemplace ese archivo con otro MP3 del mismo nombre.
+- **Amenaza y Zona despejada:** sirena generada por la app. Para darles audio propio, agregue el archivo en `public/sonidos/` y su ruta en `SONIDOS`, en `public/comun.js`.
+
 ## Unidades (multi-unidad)
 
 - Cada **unidad** tiene un **código de inscripción** propio, de 6 caracteres. El personal queda asignado a la unidad según el código con que se inscribe.

@@ -54,8 +54,10 @@ function dibujarZona(mapa, a, capa) {
 }
 
 // ---- Sirena generada con Web Audio (no requiere archivos de sonido) ----
+// Sonidos propios por nivel (archivos en /public/sonidos). Si un archivo no carga, se usa la sirena sintetizada.
+const SONIDOS = { ATAQUE: '/sonidos/ataque.mp3' };
 const Sirena = {
-  ctx: null, osc: null, gain: null, timer: null, nivel: null,
+  ctx: null, osc: null, gain: null, timer: null, nivel: null, fuente: null, buffers: {},
   desbloquear() {
     // iPhone (Safari 16.4+): "playback" hace que suene aunque el interruptor de silencio esté activado (app abierta)
     try { if (navigator.audioSession) navigator.audioSession.type = 'playback'; } catch {}
@@ -65,13 +67,38 @@ const Sirena = {
       // iOS: reproducir un sonido vacío dentro del toque "desbloquea" el audio
       const b = this.ctx.createBuffer(1, 1, 22050), src = this.ctx.createBufferSource();
       src.buffer = b; src.connect(this.ctx.destination); src.start(0);
+      this.precargar();
     } catch {}
+  },
+  precargar() { // descarga y decodifica los audios una sola vez, para que suenen al instante
+    for (const [nivel, url] of Object.entries(SONIDOS)) {
+      if (this.buffers[nivel]) continue;
+      this.buffers[nivel] = fetch(url).then(r => r.arrayBuffer())
+        .then(ab => new Promise((ok, mal) => this.ctx.decodeAudioData(ab, ok, mal)))
+        .catch(() => { delete this.buffers[nivel]; return null; });
+    }
   },
   activa() { return !!(this.ctx && this.ctx.state === 'running'); },
   iniciar(nivel) {
     this.detener(); this.nivel = nivel;
     if (!this.ctx) return false;
     if (this.ctx.state !== 'running') this.ctx.resume();
+    if (SONIDOS[nivel]) {
+      this.precargar();
+      const id = Symbol(); this.reproduciendo = id;
+      Promise.resolve(this.buffers[nivel]).then(buf => {
+        if (this.reproduciendo !== id) return;          // se detuvo mientras cargaba
+        if (!buf) return this.sintetizada(nivel);        // el archivo falló: sirena de respaldo
+        const src = this.ctx.createBufferSource(), g = this.ctx.createGain();
+        src.buffer = buf; src.loop = true; g.gain.value = 1;  // se repite hasta que la persona responda
+        src.connect(g).connect(this.ctx.destination); src.start(0); this.fuente = src;
+      });
+      return this.activa();
+    }
+    this.sintetizada(nivel);
+    return this.activa();
+  },
+  sintetizada(nivel) {
     this.osc = this.ctx.createOscillator(); this.gain = this.ctx.createGain();
     this.osc.type = 'sawtooth'; this.gain.gain.value = .35;
     this.osc.connect(this.gain).connect(this.ctx.destination); this.osc.start();
@@ -80,9 +107,12 @@ const Sirena = {
       this.osc.frequency.linearRampToValueAtTime(alto ? 600 : 1300, t + (lento ? 1.2 : .45)); alto = !alto; };
     paso(); this.timer = setInterval(paso, lento ? 1200 : 450);
     if (nivel === 'DESPEJADO') setTimeout(() => this.detener(), 2500);
-    return this.activa();
   },
-  detener() { clearInterval(this.timer); try { this.osc && this.osc.stop(); } catch {} this.osc = null; }
+  detener() {
+    this.reproduciendo = null; clearInterval(this.timer);
+    try { this.osc && this.osc.stop(); } catch {} this.osc = null;
+    try { this.fuente && this.fuente.stop(); } catch {} this.fuente = null;
+  }
 };
 // Al volver a la app (iOS suspende el audio en segundo plano) se reactiva el contexto
 document.addEventListener('visibilitychange', () => {

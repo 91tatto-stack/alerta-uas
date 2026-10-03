@@ -118,7 +118,7 @@
           <button class="btn" style="margin-top:10px;width:100%" id="btnUnidad">Crear unidad</button>
           <div class="error" id="uError"></div>
         </details>
-        <details><summary class="sum">Crear operador de CCOSD para una unidad</summary>
+        <details><summary class="sum">Operadores de CCOSD (crear, cambiar clave, eliminar)</summary>
           <div class="dos" style="grid-template-columns:1fr 1fr">
             <label>Usuario<input id="oUsuario" placeholder="c2.cacom1" autocomplete="off"></label>
             <label>Grado y nombre<input id="oNombre" placeholder="TE. Pérez"></label>
@@ -131,6 +131,12 @@
           <div class="error" id="oError"></div>
           <div id="operadores" style="margin-top:8px"></div>
         </details>
+      </section>
+      <section class="tarjeta">
+        <h3>Personal inscrito</h3>
+        <input id="pBuscar" placeholder="Buscar por nombre o unidad" autocomplete="off">
+        <div id="personal" style="margin-top:8px;max-height:280px;overflow:auto"></div>
+        <div class="aviso">Al dar de baja a una persona, su teléfono deja de recibir alertas y deberá inscribirse de nuevo.</div>
       </section>
       <section class="tarjeta">
         <h3>Alertas activas</h3>
@@ -162,6 +168,22 @@
 <script src="/vendor/leaflet/leaflet.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/comun.js"></script>
+<!-- Editar unidad -->
+<div class="modal oculto" id="mUnidad">
+  <div class="caja">
+    <h3>Editar unidad</h3>
+    <label>Nombre<input id="eNombre" maxlength="80"></label>
+    <label>Sigla<input id="eSigla" maxlength="20" style="text-transform:uppercase"></label>
+    <label style="display:flex;gap:8px;align-items:center;margin-top:14px"><input type="checkbox" id="eMover" style="width:auto;margin:0"> <span id="eMoverTxt"></span></label>
+    <div class="aviso">El código de inscripción, el escudo y el personal inscrito no cambian.</div>
+    <div class="error" id="eError"></div>
+    <div class="fila" style="margin-top:16px">
+      <button class="btn" id="eCancelar">Cancelar</button>
+      <button class="btn primario" id="eOk">Guardar</button>
+    </div>
+    <button class="btn" id="eEliminar" style="margin-top:10px;width:100%;color:var(--rojo);border-color:#5c1c1e">Eliminar unidad</button>
+  </div>
+</div>
 <!-- Cambio de contraseña -->
 <div class="modal oculto" id="mClave">
   <div class="caja">
