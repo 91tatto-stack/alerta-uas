@@ -21,7 +21,7 @@ async function cargar() {
 }
 function pintar() {
   capa.clearLayers();
-  const todas = [...datos.activas, ...datos.historial.slice(0, 10)];
+  const todas = datos.activas.slice(0, 1); // en el mapa solo la última alerta activa
   todas.forEach(a => dibujarZona(mapa, a, capa));
   const top = datos.activas.find(a => a.nivel !== 'DESPEJADO') || datos.activas[0];
   const est = $('#estado'); est.className = 'estado ' + (top ? (top.nivel === 'DESPEJADO' ? 'DESPEJADO' : 'activa') : '');

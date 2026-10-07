@@ -201,8 +201,8 @@ function pintarSeleccion() {
   const radio = Number($('#zRadio').value) || 1000;
   const color = COLORES[nivel] || '#4ea1ff';
   if (marcador) mapa.removeLayer(marcador); if (circulo) mapa.removeLayer(circulo);
-  marcador = L.circleMarker([zona.lat, zona.lng], { radius: 6, color: '#fff', fillColor: color, fillOpacity: 1 }).addTo(mapa);
-  circulo = L.circle([zona.lat, zona.lng], { radius: radio, color, weight: 2, dashArray: '4 4', fillOpacity: .12 }).addTo(mapa);
+  marcador = L.circleMarker([zona.lat, zona.lng], { radius: 6, color: '#fff', fillColor: color, fillOpacity: 1, interactive: false }).addTo(mapa);
+  circulo = L.circle([zona.lat, zona.lng], { radius: radio, color, weight: 2, dashArray: '4 4', fillOpacity: .12, interactive: false }).addTo(mapa);
 }
 
 // Modo
@@ -249,6 +249,8 @@ $('#mOk').onclick = async () => {
     $('#eError').style.color = 'var(--verde)';
     $('#eError').textContent = `✓ Emitida ${fechaCorta(d.alerta.creada)} a ${d.alerta.siglas} · push entregadas: ${d.push.enviadas}${d.push.fallidas ? ' · fallidas: ' + d.push.fallidas : ''}`;
     $('#mensaje').value = '';
+    // quitar el punto marcado; para la siguiente alerta se vuelve a tocar el mapa
+    if (marcador) mapa.removeLayer(marcador); if (circulo) mapa.removeLayer(circulo); marcador = circulo = null; zona = null; validar();
   } catch (e) { $('#eError').style.color = ''; $('#eError').textContent = e.message; }
 };
 
@@ -257,7 +259,7 @@ let activas = [];
 async function refrescar() {
   const d = await api('/api/c2/alertas');
   activas = d.activas;
-  capa.clearLayers(); [...d.activas, ...d.historial.slice(0, 5)].forEach(a => dibujarZona(mapa, a, capa));
+  capa.clearLayers(); d.activas.slice(0, 1).forEach(a => dibujarZona(mapa, a, capa, true)); // en el mapa solo la última alerta activa
   await Promise.all(activas.map(async a => { confirmaciones[a.id] = await api(`/api/c2/alertas/${a.id}/confirmaciones`); }));
   pintarActivas(); cargarBitacora(); cargarUnidades(); cargarPersonal();
 }

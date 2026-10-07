@@ -43,13 +43,15 @@ function crearMapa(id) {
   return m;
 }
 
-function dibujarZona(mapa, a, capa) {
+function dibujarZona(mapa, a, capa, soloVer) {
   const color = COLORES[a.nivel] || '#8b95a3';
   const activa = a.estado === 'ACTIVA';
   const c = L.circle([a.zona.lat, a.zona.lng], {
     radius: a.zona.radio, color, weight: 2, fillColor: color, fillOpacity: activa ? .25 : .06, opacity: activa ? 1 : .35,
-    dashArray: a.modo === 'SIMULACRO' ? '6 6' : null
-  }).bindPopup(`<b>${esc(a.titulo)}</b><br>${esc(a.zona.nombre)}<br>${fechaCorta(a.creada)}`);
+    dashArray: a.modo === 'SIMULACRO' ? '6 6' : null,
+    interactive: !soloVer // en el CCOSD el círculo no bloquea los clics para marcar una zona nueva
+  });
+  if (!soloVer) c.bindPopup(`<b>${esc(a.titulo)}</b><br>${esc(a.zona.nombre)}<br>${fechaCorta(a.creada)}`);
   c.addTo(capa);
   return c;
 }
