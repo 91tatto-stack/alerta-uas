@@ -1,4 +1,4 @@
-# ALERTA UAS · Prototipo Fase 1
+# ALARMA ATAQUE - UMA · Prototipo Fase 1
 
 Sistema de alerta temprana por ataque con dron. Un **Centro de Comando y Control (CCOSD)** emite la alerta y el **personal** la recibe en el teléfono con alarma sonora, vibración y pantalla completa. Cada persona confirma su estado y el CCOSD lo ve en tiempo real.
 
@@ -20,10 +20,15 @@ Se aplican **cada vez que arranca el servidor**, aunque ya existan datos. Si exi
 - El personal no tiene contraseña: se inscribe con el código de su unidad.
 - **Unidades** (solo administrador): **editar** nombre, sigla y ubicación (el código, el escudo y el personal no cambian) y **eliminar** (solo si no tiene personal, operadores ni alertas activas).
 
+## Tipos de evento
+
+1. Ataque UAS · 2. Ataque con explosivos · 3. Intrusión a la unidad · 4. Accidente aéreo · 5. Desastre natural · y **Zona despejada** (cierra las alertas activas).
+Los títulos e instrucciones están en `NIVELES` (`server.js`) y los botones en `public/c2/index.html`. Ajústelos a los protocolos de la unidad.
+
 ## Sonido de alerta
 
-- **Ataque:** `public/sonidos/ataque.mp3`, en bucle hasta que la persona responda. Para cambiarlo, reemplace ese archivo con otro MP3 del mismo nombre.
-- **Amenaza y Zona despejada:** sirena generada por la app. Para darles audio propio, agregue el archivo en `public/sonidos/` y su ruta en `SONIDOS`, en `public/comun.js`.
+- **Ataque UAS:** `public/sonidos/ataque.mp3`, en bucle hasta que la persona responda. Para cambiarlo, reemplace ese archivo con otro MP3 del mismo nombre.
+- **Los demás tipos:** sirena generada por la app. Para darles audio propio, agregue el archivo en `public/sonidos/` y su ruta en `SONIDOS`, en `public/comun.js`.
 
 ## Unidades (multi-unidad)
 
@@ -45,7 +50,7 @@ Se aplican **cada vez que arranca el servidor**, aunque ya existan datos. Si exi
 
 **Salvaguardas implementadas:**
 - Modo SIMULACRO por defecto, visualmente distinto (azul y rayado) del modo REAL (rojo).
-- Una alerta REAL exige escribir `ENVIAR` en una ventana de confirmación, y el servidor lo valida.
+- Toda alerta pasa por una ventana de confirmación (un clic) antes de emitirse.
 - Botón de **Falsa alarma**, que cancela la alerta en todos los teléfonos al instante.
 - La alerta "Zona despejada" cierra automáticamente las alertas activas.
 - Bitácora de auditoría: logins, intentos fallidos, alertas enviadas y cerradas.

@@ -1,5 +1,6 @@
 // Utilidades compartidas entre la vista del personal y el C2
-const COLORES = { ATAQUE: '#ff3b3b', AMENAZA: '#ffb020', DESPEJADO: '#3ecf8e' };
+const COLORES = { UAS: '#ff3b3b', EXPLOSIVOS: '#ff6a2b', INTRUSION: '#c45cff', ACCIDENTE: '#ff9f1c', DESASTRE: '#4ea1ff', DESPEJADO: '#3ecf8e',
+                  ATAQUE: '#ff3b3b', AMENAZA: '#ffb020' }; // las dos últimas: alertas de la versión anterior
 const ESTADO_TXT = { ACTIVA: 'ACTIVA', RESUELTA: 'RESUELTA', FALSA_ALARMA: 'FALSA ALARMA' };
 const CENTRO_INICIAL = [4.65, -74.1]; // Bogotá (cambiar a la base correspondiente)
 
@@ -55,7 +56,7 @@ function dibujarZona(mapa, a, capa) {
 
 // ---- Sirena generada con Web Audio (no requiere archivos de sonido) ----
 // Sonidos propios por nivel (archivos en /public/sonidos). Si un archivo no carga, se usa la sirena sintetizada.
-const SONIDOS = { ATAQUE: '/sonidos/ataque.mp3' };
+const SONIDOS = { UAS: '/sonidos/ataque.mp3' }; // los demás tipos usan la sirena generada
 const Sirena = {
   ctx: null, osc: null, gain: null, timer: null, nivel: null, fuente: null, buffers: {},
   desbloquear() {
@@ -102,7 +103,7 @@ const Sirena = {
     this.osc = this.ctx.createOscillator(); this.gain = this.ctx.createGain();
     this.osc.type = 'sawtooth'; this.gain.gain.value = .35;
     this.osc.connect(this.gain).connect(this.ctx.destination); this.osc.start();
-    const lento = nivel !== 'ATAQUE'; let alto = false;
+    const lento = nivel === 'DESPEJADO'; let alto = false;
     const paso = () => { const t = this.ctx.currentTime; this.osc.frequency.cancelScheduledValues(t);
       this.osc.frequency.linearRampToValueAtTime(alto ? 600 : 1300, t + (lento ? 1.2 : .45)); alto = !alto; };
     paso(); this.timer = setInterval(paso, lento ? 1200 : 450);

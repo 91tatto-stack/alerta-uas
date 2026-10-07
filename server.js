@@ -1,5 +1,5 @@
 // ============================================================
-//  ALERTA UAS - Prototipo Fase 1 (multi-unidad)
+//  ALARMA ATAQUE - UMA · Prototipo Fase 1 (multi-unidad)
 //  Backend: Express + Socket.IO + Web Push
 // ============================================================
 const express = require('express');
@@ -99,11 +99,15 @@ function auditar(actor, accion, detalle, unidades = []) {
 const unidad = id => db.unidades.find(u => u.id === id);
 const siglas = ids => ids.map(id => (unidad(id) || {}).sigla || '?').join(', ');
 
-// ---------- Catálogo de niveles (deben coincidir con los protocolos / ROE C-UAS) ----------
+// ---------- Tipos de evento (las instrucciones deben coincidir con los protocolos de la unidad) ----------
+// Para agregar o cambiar un tipo: edite esta lista y los botones en public/c2/index.html (data-n).
 const NIVELES = {
-  ATAQUE:    { titulo: 'ATAQUE CON DRON EN CURSO', instruccion: 'Busque refugio inmediato. Aléjese de ventanas y espacios abiertos. Espere instrucciones.' },
-  AMENAZA:   { titulo: 'AMENAZA UAS DETECTADA',    instruccion: 'Esté alerta. Diríjase a la zona de refugio más cercana y mantenga el teléfono a mano.' },
-  DESPEJADO: { titulo: 'ZONA DESPEJADA',           instruccion: 'La amenaza ha terminado. Retome actividades siguiendo las órdenes de su superior.' }
+  UAS:        { titulo: 'ATAQUE UAS EN CURSO',            instruccion: 'Busque refugio inmediato bajo techo sólido. Aléjese de ventanas y espacios abiertos. Espere instrucciones.' },
+  EXPLOSIVOS: { titulo: 'ATAQUE CON EXPLOSIVOS',          instruccion: 'Aléjese del área afectada y busque refugio a cubierto. No toque ni se acerque a objetos sospechosos. Espere instrucciones.' },
+  INTRUSION:  { titulo: 'INTRUSIÓN A LA UNIDAD',          instruccion: 'Resguárdese en el lugar más seguro cercano y no se exponga. Asegure accesos si es posible. Siga el plan de defensa de la unidad.' },
+  ACCIDENTE:  { titulo: 'ACCIDENTE AÉREO',                instruccion: 'No se acerque a la zona del accidente. Deje libres las vías para los equipos de emergencia. Diríjase al punto de reunión.' },
+  DESASTRE:   { titulo: 'DESASTRE NATURAL',               instruccion: 'Protéjase y siga el plan de emergencia. Cuando sea seguro, evacúe hacia el punto de encuentro. Atienda las instrucciones.' },
+  DESPEJADO:  { titulo: 'ZONA DESPEJADA',                 instruccion: 'La emergencia ha terminado. Retome actividades siguiendo las órdenes de su superior.' }
 };
 const ESTADOS_CONFIRMACION = ['RECIBIDO', 'A_SALVO', 'NECESITO_APOYO'];
 
@@ -233,7 +237,7 @@ async function enviarPush(alerta) {
   const destino = new Set(db.personal.filter(p => alerta.unidades.includes(p.unidadId)).map(p => p.id));
   const subs = db.suscripciones.filter(s => destino.has(s.personalId));
   const payload = JSON.stringify({
-    title: alerta.modo === 'SIMULACRO' ? 'SIMULACRO – Alerta UAS' : 'ALERTA – Abra la aplicación',
+    title: alerta.modo === 'SIMULACRO' ? 'SIMULACRO – Alarma UMA' : 'ALARMA – Abra la aplicación',
     body: 'Hay una alerta activa. Abra la app para ver instrucciones.',
     tag: 'alerta-' + alerta.id
   });
@@ -285,7 +289,7 @@ app.get('/api/c2/alertas', auth('c2'), (req, res) => {
 });
 
 app.post('/api/c2/alertas', auth('c2'), async (req, res) => {
-  const { nivel, modo, zona, mensaje, confirmacion } = req.body || {};
+  const { nivel, modo, zona, mensaje } = req.body || {};
   if (!NIVELES[nivel]) return res.status(400).json({ error: 'Nivel inválido' });
   if (!['REAL', 'SIMULACRO'].includes(modo)) return res.status(400).json({ error: 'Modo inválido' });
   if (!zona || typeof zona.lat !== 'number' || typeof zona.lng !== 'number') return res.status(400).json({ error: 'Seleccione la zona en el mapa' });
@@ -293,8 +297,7 @@ app.post('/api/c2/alertas', auth('c2'), async (req, res) => {
   const permitidas = unidadesDe(req.op);
   const unidades = esAdmin(req.op) ? [...new Set((req.body.unidades || []))].filter(id => permitidas.includes(id)) : [req.op.unidadId];
   if (!unidades.length) return res.status(400).json({ error: 'Seleccione al menos una unidad destino' });
-  // Salvaguarda anti-error (lección Hawái 2018): una alerta REAL exige escribir la palabra de confirmación
-  if (modo === 'REAL' && confirmacion !== 'ENVIAR') return res.status(400).json({ error: 'Confirmación requerida para alerta REAL' });
+  // Toda alerta pasa por una ventana de confirmación en el panel (un clic).
 
   const a = {
     id: crypto.randomUUID().slice(0, 8), nivel, modo, unidades,
@@ -506,7 +509,7 @@ io.on('connection', socket => {
 });
 
 server.listen(PORT, () => {
-  console.log(`\n  ALERTA UAS en marcha`);
+  console.log(`\n  ALARMA ATAQUE - UMA en marcha`);
   console.log(`  Personal:  http://localhost:${PORT}/`);
   console.log(`  CCOSD:     http://localhost:${PORT}/ccosd   (administrador: ${db.operadores.find(o => o.rol === 'admin').usuario})`);
   console.log(`  Unidades:  ${db.unidades.map(u => `${u.sigla} (código ${u.codigo})`).join(' · ')}\n`);

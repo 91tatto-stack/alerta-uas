@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <meta name="theme-color" content="#0b0d10">
-<title>CCOSD · Alerta UAS</title>
+<title>CCOSD · Alarma UMA</title>
 <link rel="icon" type="image/png" href="/favicon.png">
 <link rel="stylesheet" href="/vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="/estilos.css">
@@ -21,9 +21,9 @@
   .plantillas{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:14px}
   .plantilla{padding:16px 10px;border-radius:14px;border:2px solid var(--borde);background:#0e1115;color:var(--texto);font:800 14px Archivo,sans-serif;cursor:pointer;text-transform:uppercase;line-height:1.2}
   .plantilla small{display:block;font:500 11px Archivo;color:var(--suave);text-transform:none;margin-top:4px}
-  .plantilla.sel[data-n=ATAQUE]{border-color:var(--rojo);background:var(--rojo-bg)}
-  .plantilla.sel[data-n=AMENAZA]{border-color:var(--ambar);background:var(--ambar-bg)}
+  .plantilla.sel{border-color:var(--rojo);background:var(--rojo-bg)}
   .plantilla.sel[data-n=DESPEJADO]{border-color:var(--verde);background:var(--verde-bg)}
+  @media(max-width:520px){.plantillas{grid-template-columns:repeat(2,1fr)}}
   .enviar{width:100%;margin-top:16px;padding:18px;border-radius:14px;border:none;font:900 17px Archivo,sans-serif;letter-spacing:.5px;cursor:pointer;text-transform:uppercase}
   .enviar:disabled{opacity:.35;cursor:not-allowed}
   .dos{display:grid;grid-template-columns:2fr 1fr;gap:10px}
@@ -58,7 +58,7 @@
   <header class="cab">
     <img class="logo" id="logoUnidad" src="/logo.png" alt="Escudo">
     <div><h1>Centro de Comando y Control</h1>
-      <small class="mono">COPAF · EMISIÓN DE ALERTAS UAS · <span id="conexion">CONECTANDO</span><span class="vivo off" id="vivo"></span> <span id="quien"></span></small></div>
+      <small class="mono">COPAF · ALARMA ATAQUE - UMA · <span id="conexion">CONECTANDO</span><span class="vivo off" id="vivo"></span> <span id="quien"></span></small></div>
   </header>
 
   <!-- Login -->
@@ -89,10 +89,13 @@
         </div>
       </section>
       <section class="tarjeta">
-        <h3>3 · Tipo de alerta</h3>
+        <h3>3 · Tipo de evento</h3>
         <div class="plantillas">
-          <button class="plantilla" data-n="ATAQUE">🔴 Ataque en curso<small>Refugio inmediato</small></button>
-          <button class="plantilla" data-n="AMENAZA">🟠 Amenaza detectada<small>Alistamiento</small></button>
+          <button class="plantilla" data-n="UAS">1 · Ataque UAS<small>Refugio inmediato</small></button>
+          <button class="plantilla" data-n="EXPLOSIVOS">2 · Ataque con explosivos<small>Alejarse y cubrirse</small></button>
+          <button class="plantilla" data-n="INTRUSION">3 · Intrusión a la unidad<small>Resguardarse</small></button>
+          <button class="plantilla" data-n="ACCIDENTE">4 · Accidente aéreo<small>Despejar la zona</small></button>
+          <button class="plantilla" data-n="DESASTRE">5 · Desastre natural<small>Plan de emergencia</small></button>
           <button class="plantilla" data-n="DESPEJADO">🟢 Zona despejada<small>Cierra alertas activas</small></button>
         </div>
         <label>Mensaje adicional (opcional, sin datos clasificados)<textarea id="mensaje" rows="2" maxlength="280"></textarea></label>
@@ -155,9 +158,6 @@
   <div class="caja">
     <h3 id="mTit"></h3>
     <p class="vacio" id="mTxt"></p>
-    <div id="mReal">
-      <label>Para confirmar una alerta <b style="color:var(--rojo)">REAL</b>, escriba <b>ENVIAR</b><input id="mConf" autocomplete="off"></label>
-    </div>
     <div class="fila" style="margin-top:16px">
       <button class="btn" id="mCancelar">Cancelar</button>
       <button class="btn primario" id="mOk">Emitir alerta</button>

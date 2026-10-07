@@ -23,8 +23,8 @@ function pintar() {
   capa.clearLayers();
   const todas = [...datos.activas, ...datos.historial.slice(0, 10)];
   todas.forEach(a => dibujarZona(mapa, a, capa));
-  const top = datos.activas.find(a => a.nivel === 'ATAQUE') || datos.activas[0];
-  const est = $('#estado'); est.className = 'estado ' + (top ? top.nivel : '');
+  const top = datos.activas.find(a => a.nivel !== 'DESPEJADO') || datos.activas[0];
+  const est = $('#estado'); est.className = 'estado ' + (top ? (top.nivel === 'DESPEJADO' ? 'DESPEJADO' : 'activa') : '');
   $('#estadoIcono').innerHTML = top
     ? '<path d="M10.3 3.9 1.8 18a2 2 0 0 0 1.7 3h17a2 2 0 0 0 1.7-3L13.7 3.9a2 2 0 0 0-3.4 0z"/><path d="M12 9v4M12 17h.01"/>'
     : '<path d="M12 3 4 6v6c0 5 3.5 8 8 9 4.5-1 8-4 8-9V6l-8-3z"/><path d="m9 12 2 2 4-4"/>';
@@ -61,7 +61,7 @@ socket.on('alerta:actualizada', a => {
 function mostrarAlarma(a) {
   alertaEnPantalla = a; vistas.add(a.id); localStorage.setItem('alertasVistas', JSON.stringify([...vistas].slice(-100)));
   const el = $('#alarma'); el.className = `alarma ${a.nivel} ${a.modo}`;
-  $('#aEtiq').textContent = (a.modo === 'SIMULACRO' ? '⚠ SIMULACRO · ' : '') + 'ALERTA UAS · ' + fechaCorta(a.creada);
+  $('#aEtiq').textContent = (a.modo === 'SIMULACRO' ? '⚠ SIMULACRO · ' : '') + 'ALARMA UMA · ' + fechaCorta(a.creada);
   $('#aTit').textContent = a.titulo.replace('SIMULACRO · ', '');
   $('#aInstr').textContent = a.instruccion;
   $('#aMsg').textContent = a.mensaje || '';
@@ -75,7 +75,7 @@ function mostrarAlarma(a) {
   // Si el navegador bloqueó el sonido (típico en iPhone al abrir desde la notificación), pedir un toque
   $('#aSonido').classList.toggle('oculto', suena || a.nivel === 'DESPEJADO');
   setTimeout(revisarSonido, 400);
-  if (navigator.vibrate) navigator.vibrate(a.nivel === 'ATAQUE' ? [600, 200, 600, 200, 600, 200, 600] : [400, 300, 400]);
+  if (navigator.vibrate) navigator.vibrate(a.nivel !== 'DESPEJADO' ? [600, 200, 600, 200, 600, 200, 600] : [400, 300, 400]);
 }
 document.querySelectorAll('#aBotones button').forEach(b => b.onclick = async () => {
   Sirena.detener(); $('#aSonido').classList.add('oculto');

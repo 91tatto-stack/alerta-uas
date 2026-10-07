@@ -25,8 +25,8 @@ html,body{margin:0;background:var(--bg);color:var(--texto);font-family:Archivo,s
 .estado svg{width:44px;height:44px;flex:none;stroke:var(--verde)}
 .estado h2{margin:0 0 6px;font-size:21px}
 .estado p{margin:0;color:var(--suave);line-height:1.4}
-.estado.ATAQUE{background:var(--rojo-bg);border-color:#5c1c1e}.estado.ATAQUE svg{stroke:var(--rojo)}
-.estado.AMENAZA{background:var(--ambar-bg);border-color:#5a4210}.estado.AMENAZA svg{stroke:var(--ambar)}
+.estado.activa{background:var(--rojo-bg);border-color:#5c1c1e}.estado.activa svg{stroke:var(--rojo)}
+.estado.DESPEJADO{background:var(--verde-bg)}
 .mapa{height:340px;border-radius:var(--radio);border:1px solid var(--borde);overflow:hidden;background:#0f1216}
 .tarjeta{margin-top:18px;padding:18px;border-radius:var(--radio);border:1px solid var(--borde);background:var(--panel)}
 .tarjeta h3{margin:0 0 12px;font-size:15px;letter-spacing:.3px}
@@ -45,7 +45,6 @@ label{display:block;margin-top:12px;font-size:13px;color:var(--suave)}
 
 /* ---- Pantalla de alarma a pantalla completa ---- */
 .alarma{position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;justify-content:center;padding:28px 22px;background:var(--rojo);color:#fff;animation:parp 1s infinite}
-.alarma.AMENAZA{background:#c77800;animation:none}
 .alarma.DESPEJADO{background:#0f7a4b;animation:none}
 .alarma.SIMULACRO{background-image:repeating-linear-gradient(45deg,rgba(0,0,0,.12) 0 22px,transparent 22px 44px)}
 @keyframes parp{50%{background-color:#a80d0d}}

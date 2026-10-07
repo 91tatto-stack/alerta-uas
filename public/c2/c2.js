@@ -233,20 +233,18 @@ function nombresDestino() {
 
 // ---------- Emisión con confirmación ----------
 $('#btnEnviar').onclick = () => {
-  const nombres = { ATAQUE: 'ATAQUE EN CURSO', AMENAZA: 'AMENAZA DETECTADA', DESPEJADO: 'ZONA DESPEJADA' };
+  const nombres = { UAS: 'ATAQUE UAS', EXPLOSIVOS: 'ATAQUE CON EXPLOSIVOS', INTRUSION: 'INTRUSIÓN A LA UNIDAD', ACCIDENTE: 'ACCIDENTE AÉREO', DESASTRE: 'DESASTRE NATURAL', DESPEJADO: 'ZONA DESPEJADA' };
   const personas = unidades.filter(u => destinos.has(u.id)).reduce((n, u) => n + u.personal, 0);
   $('#mTit').textContent = `${modo === 'REAL' ? '⚠ ALERTA REAL' : 'Simulacro'} · ${nombres[nivel]}`;
   $('#mTxt').innerHTML = `Destino: <b>${esc(nombresDestino())}</b> (${personas} personas inscritas).<br>Zona: ${esc($('#zNombre').value || 'sin nombre')} · radio ${esc($('#zRadio').value)} m.`;
-  $('#mReal').classList.toggle('oculto', modo !== 'REAL'); $('#mConf').value = '';
-  $('#modal').classList.remove('oculto'); (modo === 'REAL' ? $('#mConf') : $('#mOk')).focus();
+  $('#modal').classList.remove('oculto'); $('#mOk').focus();
 };
 $('#mCancelar').onclick = () => $('#modal').classList.add('oculto');
 $('#mOk').onclick = async () => {
-  if (modo === 'REAL' && $('#mConf').value.trim().toUpperCase() !== 'ENVIAR') return $('#mConf').focus();
   $('#modal').classList.add('oculto'); $('#eError').textContent = '';
   try {
     const d = await api('/api/c2/alertas', { method: 'POST', body: JSON.stringify({
-      nivel, modo, unidades: [...destinos], mensaje: $('#mensaje').value.trim(), confirmacion: modo === 'REAL' ? 'ENVIAR' : undefined,
+      nivel, modo, unidades: [...destinos], mensaje: $('#mensaje').value.trim(),
       zona: { ...zona, radio: Number($('#zRadio').value), nombre: $('#zNombre').value.trim() || 'Zona sin nombre' } }) });
     $('#eError').style.color = 'var(--verde)';
     $('#eError').textContent = `✓ Emitida ${fechaCorta(d.alerta.creada)} a ${d.alerta.siglas} · push entregadas: ${d.push.enviadas}${d.push.fallidas ? ' · fallidas: ' + d.push.fallidas : ''}`;

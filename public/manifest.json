@@ -1,6 +1,6 @@
 {
-  "name": "Alerta UAS",
-  "short_name": "Alerta UAS",
+  "name": "ALARMA ATAQUE - UMA",
+  "short_name": "Alarma UMA",
   "start_url": "/",
   "display": "standalone",
   "background_color": "#0b0d10",
