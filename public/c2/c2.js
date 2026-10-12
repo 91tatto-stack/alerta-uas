@@ -43,7 +43,11 @@ async function iniciar() {
   socket.on('disconnect', () => { $('#conexion').textContent = 'SIN CONEXIÓN'; $('#vivo').classList.add('off'); });
   socket.on('alerta:nueva', refrescar);
   socket.on('alerta:actualizada', refrescar);
-  socket.on('confirmacion', async d => { try { confirmaciones[d.alertaId] = await api(`/api/c2/alertas/${d.alertaId}/confirmaciones`); pintarActivas(); } catch {} });
+  socket.on('confirmacion', async d => {
+    try { confirmaciones[d.alertaId] = await api(`/api/c2/alertas/${d.alertaId}/confirmaciones`); pintarActivas(); } catch {}
+    if (d.apoyo) avisarApoyo(d.nombre);
+  });
+  socket.on('solicitud', () => { cargarPersonal(); cargarUnidades(); });
   setInterval(() => { cargarUnidades(); cargarBitacora(); cargarPersonal(); }, 20000);
   if (yo.admin) cargarOperadores();
 }
@@ -69,7 +73,7 @@ async function cargarUnidades() {
     <div class="unidad">
       <div style="display:flex;gap:12px;align-items:center"><img class="esc" src="${esc(u.escudo)}" alt="">
         <div><b>${esc(u.sigla)}</b> <small>${esc(u.nombre)}</small><br>
-        <small>${u.personal} inscritos · ${u.push} con avisos push${u.operadores.length ? ' · CCOSD: ' + u.operadores.map(esc).join(', ') : ''}</small>
+        <small>${u.personal} con acceso · ${u.push} con avisos push${u.pendientes ? ` · <b style="color:var(--ambar)">${u.pendientes} por aprobar</b>` : ''}${u.operadores.length ? ' · CCOSD: ' + u.operadores.map(esc).join(', ') : ''}</small>
         ${yo.admin ? `<div class="acc"><a href="#" style="margin-left:0" onclick="editarUnidad('${u.id}');return false">editar</a><a href="#" onclick="elegirEscudo('${u.id}');return false">cambiar escudo</a>${u.escudo !== '/logo.png' ? `<a href="#" onclick="quitarEscudo('${u.id}');return false">quitar</a>` : ''}</div>` : ''}</div></div>
       <div style="text-align:right"><small>CÓDIGO</small><div class="cod">${esc(u.codigo)}</div>
         ${yo.admin ? `<a href="#" style="font-size:11px;color:var(--suave)" onclick="renovar('${u.id}');return false">renovar</a>` : ''}</div>
@@ -181,12 +185,62 @@ let personal = [];
 async function cargarPersonal() {
   try { personal = await api('/api/c2/personal'); pintarPersonal(); } catch {}
 }
+const VIG = { APROBADO: p => p.vence ? 'hasta ' + fechaCorta(p.vence) : 'indeterminado', VENCIDO: () => 'VENCIDO', RECHAZADO: () => 'RECHAZADO', PENDIENTE: () => 'POR APROBAR' };
 function pintarPersonal() {
+  // Solicitudes pendientes
+  const pend = personal.filter(p => p.estado === 'PENDIENTE');
+  $('#nSolicitudes').textContent = pend.length;
+  $('#solicitudes').innerHTML = pend.map(p => `<div class="sol"><span><b>${esc(p.nombre)}</b> <span class="vacio">· ${esc(p.unidad)}</span><br>
+      <span class="vacio" style="font-size:12px">Solicitado ${fechaCorta(p.solicitado)}</span></span>
+      <span class="acc2"><button class="btn primario" onclick="abrirAval('${p.id}')">Aprobar</button><button class="btn" style="color:var(--rojo)" onclick="rechazar('${p.id}')">Rechazar</button></span></div>`).join('')
+    || '<div class="vacio">No hay solicitudes pendientes.</div>';
+  // Personal (sin los pendientes)
   const q = $('#pBuscar').value.trim().toLowerCase();
-  const lista = personal.filter(p => !q || p.nombre.toLowerCase().includes(q) || (p.unidad || '').toLowerCase().includes(q));
-  $('#personal').innerHTML = lista.map(p => `<div class="persona"><span>${esc(p.nombre)} <span class="vacio">· ${esc(p.unidad)} ${p.push ? '· push ✓' : '· sin push'}</span></span>
-    <a href="#" class="lnk rojo" onclick="eliminarPersonal('${p.id}');return false">dar de baja</a></div>`).join('')
-    || `<div class="vacio">${personal.length ? 'Sin resultados.' : 'Nadie inscrito todavía.'}</div>`;
+  const lista = personal.filter(p => p.estado !== 'PENDIENTE' && (!q || p.nombre.toLowerCase().includes(q) || (p.unidad || '').toLowerCase().includes(q)));
+  $('#personal').innerHTML = lista.map(p => `<div class="persona"><span>${esc(p.nombre)} <span class="vacio">· ${esc(p.unidad)} ${p.push ? '· push ✓' : '· sin push'}</span><br>
+      <span class="vig ${p.estado}">${(VIG[p.estado] || (() => p.estado))(p)}</span></span>
+    <span style="white-space:nowrap"><a href="#" class="lnk" onclick="abrirAval('${p.id}');return false">vigencia</a><a href="#" class="lnk rojo" onclick="eliminarPersonal('${p.id}');return false">dar de baja</a></span></div>`).join('')
+    || `<div class="vacio">${lista.length || personal.length ? 'Sin resultados.' : 'Nadie inscrito todavía.'}</div>`;
+}
+// ---------- Aval de acceso ----------
+let avalDe = null;
+function abrirAval(id) {
+  avalDe = personal.find(p => p.id === id); if (!avalDe) return;
+  $('#avTit').textContent = avalDe.estado === 'PENDIENTE' ? 'Aprobar acceso' : 'Cambiar vigencia';
+  $('#avOk').textContent = avalDe.estado === 'PENDIENTE' ? 'Aprobar' : 'Guardar';
+  $('#avQuien').textContent = `${avalDe.nombre} · ${avalDe.unidad}`;
+  $('#avTipo').value = 'INDEFINIDO'; $('#avError').textContent = ''; actualizarAval();
+  $('#mAval').classList.remove('oculto');
+}
+function actualizarAval() {
+  const t = $('#avTipo').value, n = Math.floor(Number($('#avCant').value));
+  $('#avCantL').classList.toggle('oculto', t === 'INDEFINIDO');
+  $('#avCantTxt').textContent = t === 'HORAS' ? 'Número de horas (1 a 720)' : 'Número de días (1 a 365)';
+  $('#avHasta').textContent = t === 'INDEFINIDO' ? 'Recibirá alertas hasta que se le dé de baja.'
+    : n > 0 ? 'Acceso hasta: ' + fechaCorta(new Date(Date.now() + n * (t === 'HORAS' ? 3600e3 : 86400e3)).toISOString()) : '';
+}
+$('#avTipo').onchange = actualizarAval; $('#avCant').oninput = actualizarAval;
+$('#avCancelar').onclick = () => $('#mAval').classList.add('oculto');
+$('#avOk').onclick = async () => {
+  $('#avError').textContent = '';
+  try {
+    await api(`/api/c2/personal/${avalDe.id}/aval`, { method: 'POST', body: JSON.stringify({ tipo: $('#avTipo').value, cantidad: $('#avCant').value }) });
+    $('#mAval').classList.add('oculto'); cargarPersonal(); cargarUnidades();
+  } catch (e) { $('#avError').textContent = e.message; }
+};
+async function rechazar(id) {
+  const p = personal.find(x => x.id === id); if (!p) return;
+  if (!confirm(`¿Rechazar la solicitud de ${p.nombre} (${p.unidad})?`)) return;
+  try { await api(`/api/c2/personal/${id}/rechazar`, { method: 'POST' }); cargarPersonal(); cargarUnidades(); } catch (e) { alert(e.message); }
+}
+// ---------- Aviso emergente cuando alguien pide apoyo ----------
+function avisarApoyo(nombre) {
+  const el = $('#avisoApoyo');
+  el.textContent = `🚨 ${nombre || 'Una persona'} SOLICITA APOYO · ver Alertas activas`;
+  el.classList.remove('oculto');
+  el.onclick = () => { el.classList.add('oculto'); $('#activas').scrollIntoView({ behavior: 'smooth' }); };
+  clearTimeout(el.t); el.t = setTimeout(() => el.classList.add('oculto'), 15000);
+  try { const c = new AudioContext(), o = c.createOscillator(); o.frequency.value = 880; o.connect(c.destination); o.start(); setTimeout(() => { o.stop(); c.close(); }, 600); } catch {}
 }
 $('#pBuscar').oninput = pintarPersonal;
 async function eliminarPersonal(id) {
@@ -256,9 +310,30 @@ $('#mOk').onclick = async () => {
 
 // ---------- Estado en vivo ----------
 let activas = [];
+// ---------- Historial de alertas y reportes PDF ----------
+function pintarHistorial(h) {
+  $('#historialC2').innerHTML = h.map(a => `<div class="hist"><div>
+      <div class="meta mono vacio" style="font-size:11px"><span class="punto ${a.estado}"></span>${ESTADO_TXT[a.estado]} · ${a.modo} · ${fechaCorta(a.creada)} · ${esc(a.siglas)}</div>
+      <b>${esc(a.titulo)}</b></div>
+      <button class="btn pdf" onclick="descargarPDF('/api/c2/reportes/alerta/${a.id}.pdf', this)">⬇ PDF</button></div>`).join('')
+    || '<div class="vacio">Aún no hay alertas finalizadas.</div>';
+}
+async function descargarPDF(url, btn) {
+  const txt = btn ? btn.textContent : ''; if (btn) { btn.disabled = true; btn.textContent = 'Generando…'; }
+  try {
+    const r = await fetch(url, { headers: { Authorization: 'Bearer ' + token } });
+    if (r.status === 401) return salir();
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || 'No se pudo generar el reporte');
+    const nombre = (/filename="([^"]+)"/.exec(r.headers.get('Content-Disposition') || '') || [])[1] || 'reporte.pdf';
+    const enlace = document.createElement('a'); enlace.href = URL.createObjectURL(await r.blob()); enlace.download = nombre;
+    document.body.appendChild(enlace); enlace.click(); setTimeout(() => { URL.revokeObjectURL(enlace.href); enlace.remove(); }, 1000);
+    cargarBitacora();
+  } catch (e) { alert(e.message); }
+  finally { if (btn) { btn.disabled = false; btn.textContent = txt; } }
+}
 async function refrescar() {
   const d = await api('/api/c2/alertas');
-  activas = d.activas;
+  activas = d.activas; pintarHistorial(d.historial);
   capa.clearLayers(); d.activas.slice(0, 1).forEach(a => dibujarZona(mapa, a, capa, true)); // en el mapa solo la última alerta activa
   await Promise.all(activas.map(async a => { confirmaciones[a.id] = await api(`/api/c2/alertas/${a.id}/confirmaciones`); }));
   pintarActivas(); cargarBitacora(); cargarUnidades(); cargarPersonal();
@@ -269,12 +344,20 @@ async function cargarBitacora() {
     $('#log').innerHTML = log.map(l => `<div>${fechaCorta(l.fecha)} · <b>${esc(l.actor)}</b> · ${esc(l.accion)} · ${esc(l.detalle)}</div>`).join('') || 'Sin registros';
   } catch {}
 }
+function detalleApoyo(p) {
+  if (!p.apoyo) return '';
+  const a = p.apoyo;
+  if (!a.actualizado) return '<div class="apoyo-det">Pidió apoyo · <i>esperando que indique ubicación y heridas</i></div>';
+  return `<div class="apoyo-det">📍 <b>Ubicación:</b> ${esc(a.ubicacion || 'no indicó')}<br>
+    ${a.herido ? `🩸 <b>HERIDO:</b> ${esc(a.herida || 'sin descripción')}` : '✓ <b>Sin heridas</b>'}
+    <span class="vacio" style="font-size:11px"> · ${fechaCorta(a.actualizado)}</span></div>`;
+}
 function pintarActivas() {
   if (!activas.length) return $('#activas').innerHTML = '<div class="vacio">Sin alertas activas.</div>';
   $('#activas').innerHTML = activas.map(a => {
     const c = confirmaciones[a.id] || { cuenta: {}, lista: [] };
     const orden = { NECESITO_APOYO: 0, PENDIENTE: 1, RECIBIDO: 2, A_SALVO: 3 };
-    const lista = [...c.lista].sort((x, y) => orden[x.estado] - orden[y.estado]);
+    const lista = [...c.lista].sort((x, y) => orden[x.estado] - orden[y.estado] || ((y.apoyo && y.apoyo.herido) ? 1 : 0) - ((x.apoyo && x.apoyo.herido) ? 1 : 0));
     const puedeCerrar = yo.admin || a.unidades.every(id => yo.unidad && id === yo.unidad.id);
     return `<div class="item" style="border-color:${COLORES[a.nivel]}">
       <div class="meta mono"><span class="punto ACTIVA"></span>${a.modo} · ${fechaCorta(a.creada)} · ${esc(a.siglas)} · ${esc(a.zona.nombre)}</div>
@@ -285,12 +368,14 @@ function pintarActivas() {
         <div class="stat"><b style="color:var(--rojo)">${c.cuenta.NECESITO_APOYO || 0}</b><span>APOYO</span></div>
         <div class="stat"><b style="color:var(--ambar)">${c.cuenta.PENDIENTE || 0}</b><span>SIN RESPUESTA</span></div>
       </div>
-      <div style="margin-top:10px;max-height:200px;overflow:auto">${lista.map(p =>
-        `<div class="persona"><span>${esc(p.nombre)} <span class="vacio">· ${esc(p.unidad)}</span></span><span class="tag ${p.estado}">${p.estado.replace('_', ' ')}</span></div>`).join('')}</div>
+      <div style="margin-top:10px;max-height:340px;overflow:auto">${lista.map(p =>
+        `<div class="persona"><span>${esc(p.nombre)} <span class="vacio">· ${esc(p.unidad)}</span></span><span class="tag ${p.estado}">${p.estado.replace('_', ' ')}</span></div>${detalleApoyo(p)}`).join('')}</div>
       ${puedeCerrar ? `<div class="acciones">
         <button class="btn" onclick="cerrar('${a.id}','RESUELTA')">Finalizar (resuelta)</button>
         <button class="btn" style="color:var(--ambar)" onclick="cerrar('${a.id}','FALSA_ALARMA')">Falsa alarma</button>
-      </div>` : '<div class="aviso">Alerta de varias unidades: la finaliza el administrador general.</div>'}</div>`;
+        <button class="btn pdf" onclick="descargarPDF('/api/c2/reportes/alerta/${a.id}.pdf', this)">⬇ PDF</button>
+      </div>` : `<div class="aviso">Alerta de varias unidades: la finaliza el administrador general.</div>
+        <div class="acciones"><button class="btn pdf" onclick="descargarPDF('/api/c2/reportes/alerta/${a.id}.pdf', this)">⬇ PDF</button></div>`}</div>`;
   }).join('');
 }
 async function cerrar(id, estado) {

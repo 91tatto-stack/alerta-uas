@@ -14,6 +14,7 @@
     "express": "^5.2.1",
     "jsonwebtoken": "^9.0.3",
     "leaflet": "^1.9.4",
+    "pdfkit": "^0.20.2",
     "socket.io": "^4.8.4",
     "web-push": "^3.6.7"
   },

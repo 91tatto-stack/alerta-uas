@@ -20,6 +20,23 @@ Se aplican **cada vez que arranca el servidor**, aunque ya existan datos. Si exi
 - El personal no tiene contraseña: se inscribe con el código de su unidad.
 - **Unidades** (solo administrador): **editar** nombre, sigla y ubicación (el código, el escudo y el personal no cambian) y **eliminar** (solo si no tiene personal, operadores ni alertas activas).
 
+## Aval de inscripción y vigencia
+
+- Al inscribirse con el código de su unidad, la persona queda **pendiente**: no recibe alertas hasta que el CCOSD le dé el aval.
+- En el CCOSD, sección **Solicitudes de inscripción**: **Aprobar** (vigencia indeterminada, por horas o por días) o **Rechazar**. El administrador ve todas; cada operador, las de su unidad.
+- En **Personal inscrito**, el enlace **vigencia** cambia el plazo. Al vencer, la persona deja de recibir alertas y puede **solicitar acceso de nuevo** desde su teléfono.
+
+## Solicitud de apoyo
+
+Al tocar **Necesito apoyo**, el CCOSD recibe el aviso al instante (alerta emergente con sonido) y el teléfono indica **BUSQUE CUBIERTA Y PROTECCIÓN** y pide **dónde está** y **si tiene heridas**. Esos datos aparecen bajo el nombre de la persona en **Alertas activas**; los heridos se listan primero.
+
+## Reportes PDF para auditoría (panel CCOSD)
+
+- **Personal inscrito** (botón ⬇ PDF en esa sección): resumen por unidad, detalle de cada persona (estado, vigencia, quién dio el aval y cuándo) y movimientos de inscripción.
+- **Por alerta** (botón ⬇ PDF en Alertas activas y en Historial de alertas): datos de la alerta (quién la emitió y la cerró, zona, horarios, duración), destinatarios guardados al emitirla, respuesta y tiempo de respuesta de cada persona, solicitudes de apoyo con ubicación y heridas, y la bitácora durante la alerta.
+- Cada PDF lleva folio, fecha y usuario que lo generó; la generación queda registrada en la bitácora. El administrador ve todas las unidades; cada operador, solo la suya.
+- Hora de los reportes: Colombia (variable `REPORTE_TZ` para cambiarla).
+
 ## Tipos de evento
 
 1. Ataque UAS · 2. Ataque con explosivos · 3. Intrusión a la unidad · 4. Accidente aéreo · 5. Desastre natural · y **Zona despejada** (cierra las alertas activas).

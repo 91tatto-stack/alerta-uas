@@ -51,6 +51,16 @@
   .unidad small{color:var(--suave);font-size:12px}
   .sum{cursor:pointer;font-weight:700;font-size:14px;margin:12px 0 4px;color:var(--texto)}
   select{appearance:auto}
+  .btn.pdf{flex:none;min-width:0;padding:7px 14px;font-size:12px;border-color:var(--azul);color:var(--azul)}
+  .hist{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:10px 0;border-bottom:1px solid var(--borde)}
+  .hist b{display:block;font-size:13px}
+  .sol{padding:12px;border:1px solid #5a4210;background:var(--ambar-bg);border-radius:12px;margin-top:8px;display:flex;justify-content:space-between;gap:10px;align-items:center;flex-wrap:wrap}
+  .sol .acc2{display:flex;gap:8px}.sol .acc2 .btn{min-width:0;padding:8px 14px;font-size:13px}
+  .vig{font-size:11px;font-family:'JetBrains Mono',monospace}
+  .vig.APROBADO{color:var(--verde)}.vig.VENCIDO,.vig.RECHAZADO{color:var(--rojo)}.vig.PENDIENTE{color:var(--ambar)}
+  .apoyo-det{margin:4px 0 6px;padding:8px 10px;border-radius:10px;background:var(--rojo-bg);border:1px solid #5c1c1e;font-size:13px;line-height:1.45}
+  .apoyo-det b{color:#fff;display:inline;margin:0;font-size:13px}
+  .aviso-apoyo{position:fixed;top:14px;left:50%;transform:translateX(-50%);z-index:6000;background:var(--rojo);color:#fff;padding:14px 18px;border-radius:14px;font:700 15px Archivo,sans-serif;box-shadow:0 8px 30px rgba(0,0,0,.5);max-width:92vw;cursor:pointer;animation:lat 1s 3}
 </style>
 </head>
 <body>
@@ -92,11 +102,11 @@
         <h3>3 · Tipo de evento</h3>
         <div class="plantillas">
           <button class="plantilla" data-n="UAS">1 · Ataque UAS<small>Refugio inmediato</small></button>
-          <button class="plantilla" data-n="EXPLOSIVOS">2 · Ataque con explosivos<small></small></button>
-          <button class="plantilla" data-n="INTRUSION">3 · Intrusión a la unidad<small></small></button>
-          <button class="plantilla" data-n="ACCIDENTE">4 · Accidente aéreo<small></small></button>
-          <button class="plantilla" data-n="DESASTRE">5 · Desastre natural<small></small></button>
-          <button class="plantilla" data-n="DESPEJADO">🟢 Zona despejada<small></small></button>
+          <button class="plantilla" data-n="EXPLOSIVOS">2 · Ataque con explosivos<small>Alejarse y cubrirse</small></button>
+          <button class="plantilla" data-n="INTRUSION">3 · Intrusión a la unidad<small>Resguardarse</small></button>
+          <button class="plantilla" data-n="ACCIDENTE">4 · Accidente aéreo<small>Despejar la zona</small></button>
+          <button class="plantilla" data-n="DESASTRE">5 · Desastre natural<small>Plan de emergencia</small></button>
+          <button class="plantilla" data-n="DESPEJADO">🟢 Zona despejada<small>Cierra alertas activas</small></button>
         </div>
         <label>Mensaje adicional (opcional, sin datos clasificados)<textarea id="mensaje" rows="2" maxlength="280"></textarea></label>
         <button class="enviar" id="btnEnviar" disabled>Seleccione zona y tipo</button>
@@ -105,7 +115,12 @@
     </div>
 
     <div>
-      <section class="tarjeta" style="margin-top:0">
+      <section class="tarjeta" style="margin-top:0" id="secSolicitudes">
+        <h3>Solicitudes de inscripción <span class="tag PENDIENTE" id="nSolicitudes">0</span></h3>
+        <div id="solicitudes"></div>
+        <div class="aviso">Verifique la identidad antes de dar el aval. La vigencia define hasta cuándo la persona recibe alertas.</div>
+      </section>
+      <section class="tarjeta">
         <h3>Red de aviso por unidad</h3>
         <div id="unidades"></div>
         <div class="aviso">Entregue el <b>código</b> de cada unidad a su personal para que se inscriba. Si un código se filtra, renuévelo.</div>
@@ -136,14 +151,20 @@
         </details>
       </section>
       <section class="tarjeta">
-        <h3>Personal inscrito</h3>
+        <h3 style="display:flex;justify-content:space-between;align-items:center">Personal inscrito
+          <button class="btn pdf" onclick="descargarPDF('/api/c2/reportes/personal.pdf', this)">⬇ PDF</button></h3>
         <input id="pBuscar" placeholder="Buscar por nombre o unidad" autocomplete="off">
         <div id="personal" style="margin-top:8px;max-height:280px;overflow:auto"></div>
-        <div class="aviso">Al dar de baja a una persona, su teléfono deja de recibir alertas y deberá inscribirse de nuevo.</div>
+        <div class="aviso">"vigencia" cambia hasta cuándo recibe alertas. Al dar de baja, su teléfono deja de recibir alertas y deberá inscribirse de nuevo.</div>
       </section>
       <section class="tarjeta">
         <h3>Alertas activas</h3>
         <div id="activas"><div class="vacio">Sin alertas activas.</div></div>
+      </section>
+      <section class="tarjeta">
+        <h3>Historial de alertas</h3>
+        <div id="historialC2" style="max-height:320px;overflow:auto"></div>
+        <div class="aviso">Descargue el reporte PDF de cada alerta para auditoría: quién la emitió, a quién llegó, quién respondió y en cuánto tiempo.</div>
       </section>
       <section class="tarjeta">
         <h3>Bitácora de auditoría</h3>
@@ -168,6 +189,29 @@
 <script src="/vendor/leaflet/leaflet.js"></script>
 <script src="/socket.io/socket.io.js"></script>
 <script src="/comun.js"></script>
+<!-- Aval de acceso / vigencia -->
+<div class="modal oculto" id="mAval">
+  <div class="caja">
+    <h3 id="avTit">Aprobar acceso</h3>
+    <p class="vacio" id="avQuien"></p>
+    <label>Vigencia del acceso
+      <select id="avTipo">
+        <option value="INDEFINIDO">Indeterminado</option>
+        <option value="HORAS">Por horas</option>
+        <option value="DIAS">Por días</option>
+      </select>
+    </label>
+    <label id="avCantL" class="oculto"><span id="avCantTxt">Cantidad</span><input id="avCant" type="number" min="1" value="8"></label>
+    <div class="aviso" id="avHasta"></div>
+    <div class="error" id="avError"></div>
+    <div class="fila" style="margin-top:16px">
+      <button class="btn" id="avCancelar">Cancelar</button>
+      <button class="btn primario" id="avOk">Aprobar</button>
+    </div>
+  </div>
+</div>
+<!-- Aviso de solicitud de apoyo -->
+<div id="avisoApoyo" class="aviso-apoyo oculto"></div>
 <!-- Editar unidad -->
 <div class="modal oculto" id="mUnidad">
   <div class="caja">

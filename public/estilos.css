@@ -61,3 +61,20 @@ label{display:block;margin-top:12px;font-size:13px;color:var(--suave)}
 
 .escudo-alarma{width:84px;height:84px;object-fit:contain;margin-bottom:14px;filter:drop-shadow(0 2px 8px rgba(0,0,0,.4))}
 .lnk{font-size:12px;color:var(--suave);margin-right:10px}.lnk.rojo{color:var(--rojo)}
+
+/* ---- Solicitud de apoyo en la pantalla de alarma ---- */
+.alarma{overflow-y:auto;justify-content:flex-start;padding-top:max(28px,env(safe-area-inset-top))}
+.alarma>:first-child{margin-top:auto}.alarma>:last-child{margin-bottom:auto}
+.apoyo{margin-top:6px}
+.apoyo-orden{font:900 26px Archivo,sans-serif;line-height:1.1;background:#fff;color:#a80d0d;padding:14px;border-radius:12px;text-align:center}
+.apoyo-sub{font-size:16px;margin:12px 0 4px}
+.apoyo label{color:#fff;font-size:15px;font-weight:600;margin-top:12px}
+.apoyo textarea{background:rgba(0,0,0,.35);border-color:rgba(255,255,255,.6);color:#fff;font-size:16px}
+.apoyo textarea::placeholder{color:rgba(255,255,255,.6)}
+.apoyo-si-no{display:flex;gap:10px}
+.apoyo-si-no button{margin-top:6px}
+.apoyo-si-no button.sel{background:#fff;color:#111}
+.acceso{padding:14px;border-radius:12px;margin-top:10px;font-size:14px;line-height:1.4}
+.acceso.PENDIENTE{background:var(--ambar-bg);color:var(--ambar);border:1px solid #5a4210}
+.acceso.APROBADO{background:var(--verde-bg);color:var(--verde);border:1px solid #1d3b2e}
+.acceso.VENCIDO,.acceso.RECHAZADO{background:var(--rojo-bg);color:#ff8a8a;border:1px solid #5c1c1e}

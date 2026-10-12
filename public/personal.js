@@ -14,6 +14,10 @@ async function cargar() {
   if (!token) { datos = { activas: [], historial: [] }; pintar(); return; }
   const r = await fetch('/api/alertas', { headers: { Authorization: 'Bearer ' + token } });
   if (r.status === 401) return cerrarSesion('Su inscripción ya no es válida. Inscríbase de nuevo.');
+  if (r.status === 403) { // acceso pendiente, vencido o rechazado
+    const d = await r.json(); if (d.perfil) actualizarPerfil(d.perfil);
+    datos = { activas: [], historial: [] }; pintar(); return;
+  }
   datos = await r.json(); pintar();
   // Si se abre la app desde la notificación, mostrar la alerta activa no vista
   const pendiente = datos.activas.find(a => !vistas.has(a.id));
@@ -33,8 +37,13 @@ function pintar() {
     $('#estadoTxt').textContent = top.instruccion + ' · Zona: ' + top.zona.nombre;
     mapa.flyTo([top.zona.lat, top.zona.lng], 13);
   } else {
-    $('#estadoTit').textContent = token ? 'Sin amenazas activas' : 'Inscríbase para recibir alertas';
-    $('#estadoTxt').textContent = token ? 'Mantén los avisos activados para enterarte al instante.' : 'Use el código que le entregó su unidad (abajo).';
+    const ea = perfil && perfil.estado;
+    const msg = !token ? ['Inscríbase para recibir alertas', 'Use el código que le entregó su unidad (abajo).']
+      : ea === 'PENDIENTE' ? ['Esperando aval del CCOSD', 'Su solicitud fue enviada. Recibirá alertas cuando el CCOSD la apruebe.']
+      : ea === 'VENCIDO' ? ['Acceso vencido', 'Ya no recibe alertas. Solicite renovar el acceso (abajo).']
+      : ea === 'RECHAZADO' ? ['Solicitud no aprobada', 'Comuníquese con el CCOSD de su unidad.']
+      : ['Sin amenazas activas', 'Mantén los avisos activados para enterarte al instante.'];
+    $('#estadoTit').textContent = msg[0]; $('#estadoTxt').textContent = msg[1];
   }
   const lista = [...datos.activas, ...datos.historial];
   $('#historial').innerHTML = lista.length ? lista.map(a => `
@@ -47,6 +56,8 @@ function pintar() {
 const socket = io();
 socket.on('connect', () => { if (token) socket.emit('unirse', token); $('#conexion').textContent = 'EN VIVO'; $('#vivo').classList.remove('off'); cargar(); });
 socket.on('disconnect', () => { $('#conexion').textContent = 'SIN CONEXIÓN'; $('#vivo').classList.add('off'); });
+socket.on('acceso', p => { const antes = perfil && perfil.estado; actualizarPerfil(p); socket.emit('unirse', token); cargar();
+  if (antes !== 'APROBADO' && p.estado === 'APROBADO') alert('✓ El CCOSD aprobó su acceso. Ya recibirá alertas.'); });
 socket.on('alerta:nueva', a => { datos.activas.unshift(a); pintar(); mostrarAlarma(a); });
 socket.on('alerta:actualizada', a => {
   datos.activas = datos.activas.filter(x => x.id !== a.id);
@@ -66,6 +77,9 @@ function mostrarAlarma(a) {
   $('#aInstr').textContent = a.instruccion;
   $('#aMsg').textContent = a.mensaje || '';
   $('#aZona').textContent = 'ZONA: ' + a.zona.nombre.toUpperCase();
+  ['#aInstr', '#aMsg'].forEach(x => $(x).classList.remove('oculto'));
+  $('#aApoyo').classList.add('oculto'); $('#apDonde').value = ''; $('#apHerida').value = ''; herido = null;
+  document.querySelectorAll('.apoyo-si-no button').forEach(x => x.classList.remove('sel')); $('#apHeridaL').classList.add('oculto'); $('#apEnviar').textContent = 'Enviar al CCOSD';
   const puedeConfirmar = !!token && a.nivel !== 'DESPEJADO';
   $('#aBotones').classList.toggle('oculto', !puedeConfirmar);
   $('#aCerrar').classList.toggle('oculto', puedeConfirmar);
@@ -77,16 +91,38 @@ function mostrarAlarma(a) {
   setTimeout(revisarSonido, 400);
   if (navigator.vibrate) navigator.vibrate(a.nivel !== 'DESPEJADO' ? [600, 200, 600, 200, 600, 200, 600] : [400, 300, 400]);
 }
+const confirmar = datos2 => fetch(`/api/alertas/${alertaEnPantalla.id}/confirmar`, {
+  method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token }, body: JSON.stringify(datos2) });
 document.querySelectorAll('#aBotones button').forEach(b => b.onclick = async () => {
   Sirena.detener(); $('#aSonido').classList.add('oculto');
-  const r = await fetch(`/api/alertas/${alertaEnPantalla.id}/confirmar`, {
-    method: 'POST', headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + token },
-    body: JSON.stringify({ estado: b.dataset.e })
-  });
+  const r = await confirmar({ estado: b.dataset.e }); // el pedido de apoyo llega al CCOSD de inmediato
+  if (r.ok && b.dataset.e === 'NECESITO_APOYO') return abrirApoyo();
   $('#aOk').textContent = r.ok ? '✓ ESTADO ENVIADO AL CCOSD: ' + b.textContent.toUpperCase() : 'No se pudo enviar. Reintente.';
   $('#aOk').classList.remove('oculto');
   if (r.ok) { $('#aBotones').classList.add('oculto'); $('#aCerrar').classList.remove('oculto'); }
 });
+// ---------- Formulario de apoyo: ubicación y heridas ----------
+let herido = null;
+function abrirApoyo() {
+  ['#aInstr', '#aMsg', '#aBotones', '#aOk'].forEach(x => $(x).classList.add('oculto'));
+  $('#aApoyo').classList.remove('oculto'); $('#aCerrar').classList.remove('oculto');
+  $('#apOk').textContent = ''; $('#alarma').scrollTop = 0;
+}
+document.querySelectorAll('.apoyo-si-no button').forEach(b => b.onclick = () => {
+  herido = b.dataset.h === 'si';
+  document.querySelectorAll('.apoyo-si-no button').forEach(x => x.classList.toggle('sel', x === b));
+  $('#apHeridaL').classList.toggle('oculto', !herido);
+});
+$('#apEnviar').onclick = async () => {
+  const donde = $('#apDonde').value.trim();
+  if (!donde) { $('#apOk').textContent = 'Escriba dónde está.'; return $('#apDonde').focus(); }
+  if (herido === null) { $('#apOk').textContent = 'Indique si tiene alguna herida.'; return; }
+  $('#apEnviar').disabled = true;
+  const r = await confirmar({ estado: 'NECESITO_APOYO', ubicacion: donde, herido, herida: herido ? $('#apHerida').value.trim() : '' }).catch(() => null);
+  $('#apEnviar').disabled = false;
+  $('#apOk').textContent = r && r.ok ? '✓ DATOS ENVIADOS AL CCOSD. PERMANEZCA A CUBIERTO. Puede actualizarlos si cambia su situación.' : 'No se pudo enviar. Reintente.';
+  if (r && r.ok) $('#apEnviar').textContent = 'Actualizar datos';
+};
 $('#aSonido').onclick = () => { Sirena.desbloquear(); setTimeout(() => { if (alertaEnPantalla) Sirena.iniciar(alertaEnPantalla.nivel); $('#aSonido').classList.toggle('oculto', Sirena.activa()); }, 150); };
 $('#aCerrar').onclick = () => { Sirena.detener(); $('#alarma').classList.add('oculto'); };
 
@@ -127,9 +163,28 @@ function pintarPerfil() {
   $('#perfil').innerHTML = `<h3>Inscrito en la red</h3><div class="vacio">${esc(perfil.nombre)}</div>
     <div class="item" style="margin-top:10px;display:flex;gap:12px;align-items:center"><img src="${esc(perfil.unidad.escudo || '/logo.png')}" alt="" style="width:48px;height:48px;object-fit:contain">
       <div><div class="meta mono">UNIDAD</div><b>${esc(perfil.unidad.sigla)} · ${esc(perfil.unidad.nombre)}</b></div></div>
+    ${bloqueAcceso()}
     <button class="btn" style="margin-top:12px;width:100%" id="btnSalir">Cerrar sesión en este teléfono</button>`;
   $('#btnSalir').onclick = () => { if (confirm('¿Dejar de recibir alertas en este teléfono?')) cerrarSesion(); };
+  if ($('#btnSolicitar')) $('#btnSolicitar').onclick = async () => {
+    const r = await fetch('/api/solicitar', { method: 'POST', headers: { Authorization: 'Bearer ' + token } });
+    if (r.ok) { actualizarPerfil(await r.json()); pintar(); }
+  };
   if (!datos.activas.length) mapa.setView([perfil.unidad.lat, perfil.unidad.lng], 13);
+}
+function bloqueAcceso() {
+  const e = perfil.estado || 'APROBADO';
+  const txt = {
+    PENDIENTE: '⏳ <b>Solicitud enviada.</b> El CCOSD debe dar el aval para que reciba alertas. Esta pantalla se actualiza sola.',
+    APROBADO: '✓ <b>Acceso aprobado</b> · ' + (perfil.vence ? 'vigente hasta ' + fechaCorta(perfil.vence) : 'vigencia indeterminada'),
+    VENCIDO: '✕ <b>Su acceso venció.</b> Ya no recibe alertas.',
+    RECHAZADO: '✕ <b>El CCOSD no aprobó su solicitud.</b> Comuníquese con su unidad.'
+  }[e] || '';
+  const boton = (e === 'VENCIDO' || e === 'RECHAZADO') ? '<button class="btn primario" style="margin-top:10px;width:100%" id="btnSolicitar">Solicitar acceso de nuevo</button>' : '';
+  return `<div class="acceso ${e}">${txt}</div>${boton}`;
+}
+function actualizarPerfil(p) {
+  perfil = p; localStorage.setItem('perfilPersonal', JSON.stringify(perfil)); pintarPerfil();
 }
 $('#btnRegistro').onclick = async () => {
   $('#rError').textContent = '';
@@ -141,6 +196,7 @@ $('#btnRegistro').onclick = async () => {
   localStorage.setItem('tokenPersonal', token); localStorage.setItem('perfilPersonal', JSON.stringify(perfil));
   socket.emit('unirse', token);
   pintarPerfil(); cargar(); $('#btnActivar').click();
+  alert('Solicitud enviada. El CCOSD de su unidad debe dar el aval para que empiece a recibir alertas.');
 };
 // Inscripciones de la versión anterior (sin unidades) deben renovarse
 if (token && (!perfil || typeof perfil.unidad !== 'object')) { localStorage.removeItem('tokenPersonal'); localStorage.removeItem('perfilPersonal'); token = null; perfil = null; }
@@ -148,8 +204,11 @@ pintarPerfil();
 // Actualizar el perfil desde el servidor (por si cambió la unidad)
 if (token) fetch('/api/perfil', { headers: { Authorization: 'Bearer ' + token } }).then(async r => {
   if (r.status === 401) return cerrarSesion('Su inscripción ya no es válida. Inscríbase de nuevo.');
-  if (r.ok) { perfil = await r.json(); localStorage.setItem('perfilPersonal', JSON.stringify(perfil)); pintarPerfil(); }
+  if (r.ok) { actualizarPerfil(await r.json()); pintar(); }
 });
+// Respaldo: revisar el estado del acceso cada minuto (por si se perdió la conexión en tiempo real)
+setInterval(() => { if (token && perfil && perfil.estado !== 'APROBADO') fetch('/api/perfil', { headers: { Authorization: 'Bearer ' + token } })
+  .then(r => r.ok ? r.json() : null).then(p => { if (p && p.estado !== perfil.estado) { actualizarPerfil(p); socket.emit('unirse', token); cargar(); } }); }, 60000);
 
 function revisarSonido() {
   const abierta = !$('#alarma').classList.contains('oculto') && alertaEnPantalla && alertaEnPantalla.nivel !== 'DESPEJADO' && !$('#aBotones').classList.contains('oculto');

@@ -205,20 +205,57 @@ app.post('/api/c2/clave', auth('c2'), limitar(5), (req, res) => {
   res.json({ ok: true });
 });
 
+// ---------- Acceso del personal: el CCOSD aprueba cada inscripción y define su vigencia ----------
+// estado: PENDIENTE | APROBADO | RECHAZADO · vence: fecha ISO o null (indeterminado)
+db.personal.forEach(p => { if (!p.estado) { p.estado = 'APROBADO'; p.vence = null; } }); // inscritos de versiones anteriores
+function estadoAcceso(p) {
+  if (p.estado === 'APROBADO' && p.vence && new Date(p.vence) <= new Date()) return 'VENCIDO';
+  return p.estado;
+}
+const activo = p => estadoAcceso(p) === 'APROBADO';
+function perfilPersonal(p) {
+  const u = unidad(p.unidadId);
+  return { nombre: p.nombre, unidad: u ? publicaUnidad(u) : null, estado: estadoAcceso(p), vence: p.vence || null };
+}
+// Avisar al teléfono y ajustar su conexión en tiempo real cuando cambia su acceso
+function notificarAcceso(p) {
+  if (activo(p)) io.in('p:' + p.id).socketsJoin('u:' + p.unidadId);
+  else io.in('p:' + p.id).socketsLeave('u:' + p.unidadId);
+  io.to('p:' + p.id).emit('acceso', perfilPersonal(p));
+}
+// Revisión periódica de vigencias vencidas
+setInterval(() => {
+  db.personal.forEach(p => {
+    if (estadoAcceso(p) === 'VENCIDO' && !p.avisoVencido) {
+      p.avisoVencido = true; guardar(); notificarAcceso(p);
+      auditar('sistema', 'ACCESO_VENCIDO', `${p.nombre} · ${(unidad(p.unidadId) || {}).sigla}`, [p.unidadId]);
+      io.to('c2:admin').to('c2:' + p.unidadId).emit('solicitud');
+    }
+  });
+}, 30 * 1000);
+
 // ---------- Inscripción del personal: el código define la unidad ----------
 app.post('/api/registro', limitar(20), (req, res) => {
   const { nombre, codigo } = req.body || {};
   const u = db.unidades.find(x => x.codigo === String(codigo || '').trim().toUpperCase());
   if (!u) return res.status(403).json({ error: 'Código de unidad incorrecto' });
   if (!nombre || String(nombre).trim().length < 3) return res.status(400).json({ error: 'Escriba su grado y nombre' });
-  const p = { id: 'p-' + crypto.randomUUID(), nombre: String(nombre).trim().slice(0, 80), unidadId: u.id, creado: new Date().toISOString() };
+  const p = { id: 'p-' + crypto.randomUUID(), nombre: String(nombre).trim().slice(0, 80), unidadId: u.id, creado: new Date().toISOString(),
+              estado: 'PENDIENTE', vence: null, solicitado: new Date().toISOString() };
   db.personal.push(p); guardar();
-  auditar(p.nombre, 'REGISTRO', `Personal inscrito en ${u.sigla}`, [u.id]);
-  res.json({ token: firmar({ id: p.id, rol: 'personal' }, 24 * 180), perfil: { nombre: p.nombre, unidad: publicaUnidad(u) } });
+  auditar(p.nombre, 'SOLICITUD', `Solicita inscripción en ${u.sigla}`, [u.id]);
+  io.to('c2:admin').to('c2:' + u.id).emit('solicitud');
+  res.json({ token: firmar({ id: p.id, rol: 'personal' }, 24 * 365), perfil: perfilPersonal(p) });
 });
-app.get('/api/perfil', auth('personal'), (req, res) => {
-  const u = unidad(req.personal.unidadId);
-  res.json({ nombre: req.personal.nombre, unidad: u ? publicaUnidad(u) : null });
+app.get('/api/perfil', auth('personal'), (req, res) => res.json(perfilPersonal(req.personal)));
+// Volver a solicitar acceso (tras vencimiento o rechazo)
+app.post('/api/solicitar', auth('personal'), limitar(10), (req, res) => {
+  const p = req.personal;
+  if (activo(p)) return res.json(perfilPersonal(p));
+  p.estado = 'PENDIENTE'; p.vence = null; p.solicitado = new Date().toISOString(); delete p.avisoVencido; guardar();
+  auditar(p.nombre, 'SOLICITUD', `Solicita renovar acceso en ${(unidad(p.unidadId) || {}).sigla}`, [p.unidadId]);
+  io.to('c2:admin').to('c2:' + p.unidadId).emit('solicitud');
+  res.json(perfilPersonal(p));
 });
 
 // ---------- Web Push ----------
@@ -234,7 +271,7 @@ app.post('/api/suscribir', auth('personal'), (req, res) => {
 async function enviarPush(alerta) {
   // Solo al personal de las unidades destino.
   // OPSEC: la notificación NO lleva detalles (pasa por servidores de Google/Apple/Mozilla).
-  const destino = new Set(db.personal.filter(p => alerta.unidades.includes(p.unidadId)).map(p => p.id));
+  const destino = new Set(db.personal.filter(p => alerta.unidades.includes(p.unidadId) && activo(p)).map(p => p.id));
   const subs = db.suscripciones.filter(s => destino.has(s.personalId));
   const payload = JSON.stringify({
     title: alerta.modo === 'SIMULACRO' ? 'SIMULACRO – Alarma UMA' : 'ALARMA – Abra la aplicación',
@@ -259,9 +296,10 @@ function alertaPublica(a) {
 function resumenConfirmaciones(alerta, op) {
   const visibles = new Set(unidadesDe(op).filter(id => alerta.unidades.includes(id)));
   const conf = db.confirmaciones.filter(c => c.alertaId === alerta.id);
-  const lista = db.personal.filter(p => visibles.has(p.unidadId)).map(p => {
+  const lista = db.personal.filter(p => visibles.has(p.unidadId) && (activo(p) || conf.some(x => x.personalId === p.id))).map(p => {
     const c = conf.find(x => x.personalId === p.id);
-    return { id: p.id, nombre: p.nombre, unidad: (unidad(p.unidadId) || {}).sigla, estado: c ? c.estado : 'PENDIENTE', fecha: c ? c.fecha : null };
+    return { id: p.id, nombre: p.nombre, unidad: (unidad(p.unidadId) || {}).sigla, estado: c ? c.estado : 'PENDIENTE', fecha: c ? c.fecha : null,
+             apoyo: c && c.estado === 'NECESITO_APOYO' ? { ubicacion: c.ubicacion || '', herido: c.herido, herida: c.herida || '', actualizado: c.detalleFecha || null } : null };
   });
   const cuenta = { RECIBIDO: 0, A_SALVO: 0, NECESITO_APOYO: 0, PENDIENTE: 0 };
   lista.forEach(l => cuenta[l.estado]++);
@@ -276,6 +314,7 @@ function emitirAlerta(evento, a) {
 
 // Personal: solo alertas de su unidad
 app.get('/api/alertas', auth('personal'), (req, res) => {
+  if (!activo(req.personal)) return res.status(403).json({ error: 'Acceso no aprobado', perfil: perfilPersonal(req.personal) });
   const mias = db.alertas.filter(a => a.unidades.includes(req.personal.unidadId));
   res.json({
     activas: mias.filter(a => a.estado === 'ACTIVA').map(alertaPublica),
@@ -305,17 +344,20 @@ app.post('/api/c2/alertas', auth('c2'), async (req, res) => {
     instruccion: NIVELES[nivel].instruccion,
     mensaje: String(mensaje || '').slice(0, 280),
     zona: { lat: zona.lat, lng: zona.lng, radio: Math.min(Math.max(Number(zona.radio) || 1000, 100), 50000), nombre: String(zona.nombre || 'Zona').slice(0, 60) },
-    estado: 'ACTIVA', creada: new Date().toISOString(), cerrada: null, enviadaPor: req.op.usuario
+    estado: 'ACTIVA', creada: new Date().toISOString(), cerrada: null, enviadaPor: req.op.usuario,
+    // Para auditoría: quiénes estaban habilitados para recibirla en el momento de emitirla
+    destinatarios: db.personal.filter(p => unidades.includes(p.unidadId) && activo(p)).map(p => ({ id: p.id, nombre: p.nombre, unidad: (unidad(p.unidadId) || {}).sigla }))
   };
   // "Zona despejada" cierra las alertas activas de esas mismas unidades
   if (nivel === 'DESPEJADO') {
     db.alertas.filter(x => x.estado === 'ACTIVA' && x.unidades.every(id => unidades.includes(id))).forEach(x => {
-      x.estado = 'RESUELTA'; x.cerrada = a.creada; emitirAlerta('alerta:actualizada', x);
+      x.estado = 'RESUELTA'; x.cerrada = a.creada; x.cerradaPor = `${req.op.usuario} (Zona despejada ${a.id})`; emitirAlerta('alerta:actualizada', x);
     });
   }
   db.alertas.unshift(a); guardar();
   emitirAlerta('alerta:nueva', a);
   const push = await enviarPush(a);
+  a.push = push; guardar();
   auditar(req.op.usuario, 'ALERTA_ENVIADA', `${a.modo} · ${a.nivel} · ${siglas(unidades)} · ${a.zona.nombre} · push ok=${push.enviadas} fallo=${push.fallidas}`, unidades);
   res.json({ alerta: alertaPublica(a), push });
 });
@@ -326,7 +368,7 @@ app.post('/api/c2/alertas/:id/cerrar', auth('c2'), (req, res) => {
   // Un operador solo cierra alertas que afectan únicamente a su unidad
   if (!esAdmin(req.op) && a.unidades.some(id => id !== req.op.unidadId)) return res.status(403).json({ error: 'Esta alerta involucra otras unidades: la cierra el administrador' });
   const estado = req.body && req.body.estado === 'FALSA_ALARMA' ? 'FALSA_ALARMA' : 'RESUELTA';
-  a.estado = estado; a.cerrada = new Date().toISOString(); guardar();
+  a.estado = estado; a.cerrada = new Date().toISOString(); a.cerradaPor = req.op.usuario; guardar();
   emitirAlerta('alerta:actualizada', a);
   auditar(req.op.usuario, estado === 'FALSA_ALARMA' ? 'FALSA_ALARMA' : 'ALERTA_CERRADA', `${a.id} · ${a.titulo} · ${siglas(a.unidades)}`, a.unidades);
   res.json({ ok: true });
@@ -344,8 +386,9 @@ app.get('/api/c2/auditoria', auth('c2'), (req, res) => {
 
 // ---------- Unidades (admin crea; operadores ven la suya) ----------
 function resumenUnidad(u, conCodigo) {
-  const ids = new Set(db.personal.filter(p => p.unidadId === u.id).map(p => p.id));
+  const ids = new Set(db.personal.filter(p => p.unidadId === u.id && activo(p)).map(p => p.id));
   return { ...publicaUnidad(u), codigo: conCodigo ? u.codigo : undefined, personal: ids.size,
+           pendientes: db.personal.filter(p => p.unidadId === u.id && p.estado === 'PENDIENTE').length,
            push: new Set(db.suscripciones.filter(s => ids.has(s.personalId)).map(s => s.personalId)).size,
            operadores: db.operadores.filter(o => o.unidadId === u.id).map(o => o.usuario) };
 }
@@ -470,7 +513,32 @@ app.get('/api/c2/personal', auth('c2'), (req, res) => {
   const vis = new Set(unidadesDe(req.op));
   const conPush = new Set(db.suscripciones.map(s => s.personalId));
   res.json(db.personal.filter(p => vis.has(p.unidadId)).map(p => ({
-    id: p.id, nombre: p.nombre, unidad: (unidad(p.unidadId) || {}).sigla, creado: p.creado, push: conPush.has(p.id) })));
+    id: p.id, nombre: p.nombre, unidad: (unidad(p.unidadId) || {}).sigla, creado: p.creado, solicitado: p.solicitado || p.creado,
+    push: conPush.has(p.id), estado: estadoAcceso(p), vence: p.vence || null, avalPor: p.avalPor || null })));
+});
+// Dar el aval (o cambiar la vigencia): tipo INDEFINIDO | HORAS | DIAS, con cantidad
+app.post('/api/c2/personal/:id/aval', auth('c2'), (req, res) => {
+  const p = db.personal.find(x => x.id === req.params.id);
+  if (!p || !unidadesDe(req.op).includes(p.unidadId)) return res.status(404).json({ error: 'No existe' });
+  const { tipo, cantidad } = req.body || {};
+  const n = Math.floor(Number(cantidad));
+  let vence = null, texto = 'indeterminado';
+  if (tipo === 'HORAS') { if (!(n >= 1 && n <= 720)) return res.status(400).json({ error: 'Horas: entre 1 y 720' }); vence = new Date(Date.now() + n * 3600e3); texto = `${n} hora(s)`; }
+  else if (tipo === 'DIAS') { if (!(n >= 1 && n <= 365)) return res.status(400).json({ error: 'Días: entre 1 y 365' }); vence = new Date(Date.now() + n * 86400e3); texto = `${n} día(s)`; }
+  else if (tipo !== 'INDEFINIDO') return res.status(400).json({ error: 'Seleccione la vigencia' });
+  p.estado = 'APROBADO'; p.vence = vence ? vence.toISOString() : null; p.avalPor = req.op.usuario; p.avalFecha = new Date().toISOString(); delete p.avisoVencido;
+  guardar(); notificarAcceso(p);
+  auditar(req.op.usuario, 'ACCESO_APROBADO', `${p.nombre} · ${(unidad(p.unidadId) || {}).sigla} · vigencia ${texto}`, [p.unidadId]);
+  io.to('c2:admin').to('c2:' + p.unidadId).emit('solicitud');
+  res.json({ ok: true });
+});
+app.post('/api/c2/personal/:id/rechazar', auth('c2'), (req, res) => {
+  const p = db.personal.find(x => x.id === req.params.id);
+  if (!p || !unidadesDe(req.op).includes(p.unidadId)) return res.status(404).json({ error: 'No existe' });
+  p.estado = 'RECHAZADO'; p.vence = null; guardar(); notificarAcceso(p);
+  auditar(req.op.usuario, 'ACCESO_RECHAZADO', `${p.nombre} · ${(unidad(p.unidadId) || {}).sigla}`, [p.unidadId]);
+  io.to('c2:admin').to('c2:' + p.unidadId).emit('solicitud');
+  res.json({ ok: true });
 });
 // Dar de baja: borra la inscripción y sus avisos push. El teléfono queda fuera de la red.
 app.delete('/api/c2/personal/:id', auth('c2'), (req, res) => {
@@ -478,7 +546,7 @@ app.delete('/api/c2/personal/:id', auth('c2'), (req, res) => {
   if (!p || !unidadesDe(req.op).includes(p.unidadId)) return res.status(404).json({ error: 'No existe' });
   db.personal = db.personal.filter(x => x.id !== p.id);
   db.suscripciones = db.suscripciones.filter(s => s.personalId !== p.id);
-  db.confirmaciones = db.confirmaciones.filter(c => c.personalId !== p.id);
+  // Las respuestas a alertas se conservan (llevan el nombre guardado) para auditoría
   guardar();
   auditar(req.op.usuario, 'PERSONAL_ELIMINADO', `${p.nombre} · ${(unidad(p.unidadId) || {}).sigla}`, [p.unidadId]);
   res.json({ ok: true });
@@ -490,19 +558,45 @@ app.post('/api/alertas/:id/confirmar', auth('personal'), (req, res) => {
   const estado = req.body && req.body.estado;
   if (!a || !a.unidades.includes(req.personal.unidadId)) return res.status(404).json({ error: 'Alerta no existe' });
   if (!ESTADOS_CONFIRMACION.includes(estado)) return res.status(400).json({ error: 'Estado inválido' });
-  db.confirmaciones = db.confirmaciones.filter(c => !(c.alertaId === a.id && c.personalId === req.personal.id));
-  db.confirmaciones.push({ alertaId: a.id, personalId: req.personal.id, estado, fecha: new Date().toISOString() }); guardar();
+  if (!activo(req.personal)) return res.status(403).json({ error: 'Su acceso no está vigente' });
+  const previa = db.confirmaciones.find(c => c.alertaId === a.id && c.personalId === req.personal.id);
+  const ahora = new Date().toISOString();
+  const nueva = { alertaId: a.id, personalId: req.personal.id, nombre: req.personal.nombre, unidad: (unidad(req.personal.unidadId) || {}).sigla, estado, fecha: ahora,
+                  primera: previa ? (previa.primera || previa.fecha) : ahora,
+                  historial: [...((previa && previa.historial) || (previa ? [{ estado: previa.estado, fecha: previa.fecha }] : []))] };
+  const ult = nueva.historial[nueva.historial.length - 1];
+  if (!ult || ult.estado !== estado) nueva.historial.push({ estado, fecha: ahora });
+  if (estado === 'NECESITO_APOYO') {
+    // Detalles opcionales: dónde está y si tiene heridas (se pueden enviar después del primer toque)
+    const b = req.body;
+    if (previa && previa.estado === 'NECESITO_APOYO') { nueva.fecha = previa.fecha; Object.assign(nueva, { ubicacion: previa.ubicacion, herido: previa.herido, herida: previa.herida, detalleFecha: previa.detalleFecha }); }
+    if (typeof b.ubicacion === 'string' || typeof b.herido === 'boolean') {
+      nueva.ubicacion = String(b.ubicacion || '').trim().slice(0, 300);
+      nueva.herido = b.herido === true ? true : b.herido === false ? false : null;
+      nueva.herida = nueva.herido ? String(b.herida || '').trim().slice(0, 300) : '';
+      nueva.detalleFecha = new Date().toISOString();
+      auditar(req.personal.nombre, 'SOLICITA_APOYO', `${nueva.ubicacion || 'sin ubicación'} · ${nueva.herido ? 'HERIDO: ' + (nueva.herida || 'sin descripción') : 'sin heridas'}`, [req.personal.unidadId]);
+    }
+  }
+  db.confirmaciones = db.confirmaciones.filter(c => c !== previa);
+  db.confirmaciones.push(nueva); guardar();
   // El CCOSD vuelve a consultar el resumen (cada operador ve solo su unidad)
-  io.to('c2:admin').to('c2:' + req.personal.unidadId).emit('confirmacion', { alertaId: a.id });
+  io.to('c2:admin').to('c2:' + req.personal.unidadId).emit('confirmacion', { alertaId: a.id, apoyo: estado === 'NECESITO_APOYO', nombre: req.personal.nombre });
   res.json({ ok: true });
 });
+
+// ---------- Reportes PDF para auditoría ----------
+require('./reportes')(app, { db, auth, unidad, unidadesDe, puedeVer, esAdmin, estadoAcceso, activo, auditar, NIVELES, ESCUDOS_DIR });
 
 // ---------- Tiempo real: cada conexión entra a la "sala" de su unidad ----------
 io.on('connection', socket => {
   socket.on('unirse', token => {
     try {
       const d = jwt.verify(token, JWT_SECRET);
-      if (d.rol === 'personal') { const p = db.personal.find(x => x.id === d.id); if (p) socket.join('u:' + p.unidadId); }
+      if (d.rol === 'personal') {
+        const p = db.personal.find(x => x.id === d.id);
+        if (p) { socket.join('p:' + p.id); if (activo(p)) socket.join('u:' + p.unidadId); } // solo con acceso vigente recibe alertas
+      }
       if (d.rol === 'c2') { const op = db.operadores.find(x => x.id === d.id); if (op) socket.join(esAdmin(op) ? 'c2:admin' : 'c2:' + op.unidadId); }
     } catch {}
   });

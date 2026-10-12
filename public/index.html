@@ -71,6 +71,20 @@
     <button data-e="RECIBIDO">Recibido</button>
     <button data-e="NECESITO_APOYO">Necesito apoyo</button>
   </div>
+  <!-- Solicitud de apoyo: se muestra al tocar "Necesito apoyo" -->
+  <div id="aApoyo" class="apoyo oculto">
+    <div class="apoyo-orden">BUSQUE CUBIERTA Y PROTECCIÓN</div>
+    <div class="apoyo-sub" id="apEnviado">Su solicitud de apoyo ya llegó al CCOSD. Cuando esté a cubierto, complete estos datos:</div>
+    <label>¿Dónde está? (edificio, piso, sitio exacto)<textarea id="apDonde" rows="2" maxlength="300" placeholder="Ej: Hangar 2, oficina del fondo"></textarea></label>
+    <label>¿Tiene alguna herida?</label>
+    <div class="apoyo-si-no">
+      <button type="button" data-h="no">No</button>
+      <button type="button" data-h="si">Sí, estoy herido</button>
+    </div>
+    <label id="apHeridaL" class="oculto">Describa la herida<textarea id="apHerida" rows="2" maxlength="300" placeholder="Ej: corte en la pierna, sangrado"></textarea></label>
+    <button id="apEnviar" class="si">Enviar al CCOSD</button>
+    <div class="ok" id="apOk"></div>
+  </div>
   <div class="ok oculto" id="aOk"></div>
   <button id="aCerrar" class="oculto">Cerrar</button>
 </div>
